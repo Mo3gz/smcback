@@ -19,7 +19,8 @@ const io = socketIo(server, {
 });
 
 // MongoDB connection setup
-const MONGO_URI = 'mongodb+srv://sigmanup:BtGLyLFyylX3AHtG@teams.mwej6xo.mongodb.net/';
+MONGODB_URI=mongodb+srv://<user>:<pass>@cluster.mongodb.net/db?retryWrites=true&w=majority&tls=true&tlsAllowInvalidCertificates=true
+
 const MONGO_DB_NAME = 'scoring-system';
 let db = null;
 let mongoConnected = false;
