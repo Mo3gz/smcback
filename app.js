@@ -55,8 +55,9 @@ async function connectToMongoDB() {
 connectToMongoDB();
 
 // Middleware
+// CORS for deployment: allow Netlify frontend and credentials
 app.use(cors({
-  origin: (origin, callback) => callback(null, true), // Allow all origins dynamically
+  origin: 'https://smcscout.netlify.app',
   credentials: true
 }));
 
@@ -363,8 +364,8 @@ app.post('/api/login', async (req, res) => {
     const token = jwt.sign({ id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName }, JWT_SECRET, { expiresIn: '24h' });
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: true, // Always true for production (HTTPS)
+      sameSite: 'none', // Required for cross-site cookies
       maxAge: 24 * 60 * 60 * 1000
     });
 
@@ -385,7 +386,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  res.clearCookie('token', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' });
+  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'none' });
   res.json({ message: 'Logged out successfully' });
 });
 
