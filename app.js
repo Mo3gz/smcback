@@ -13,10 +13,11 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || "https://smcscout.netlify.app",
-    methods: ["GET", "POST"]
+    origin: '*',
+    methods: ['GET', 'POST']
   }
 });
+
 
 // MongoDB connection variables
 let mongoClient = null;
@@ -53,8 +54,7 @@ connectToMongoDB();
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'https://smcscout.netlify.app',
-  credentials: true
+  origin: '*'
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -831,6 +831,6 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3000'}`);
+  console.log(`🔗 CORS Origin: * (Public Access)`);
 });
 
