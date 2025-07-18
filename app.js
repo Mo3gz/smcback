@@ -13,8 +13,9 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: (origin, callback) => callback(null, true), // Allow all origins dynamically
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
@@ -54,8 +55,15 @@ connectToMongoDB();
 
 // Middleware
 app.use(cors({
-  origin: '*'
+  origin: (origin, callback) => callback(null, true), // Allow all origins dynamically
+  credentials: true
 }));
+
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -827,10 +835,11 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS Origin: * (Public Access)`);
+
 });
 
