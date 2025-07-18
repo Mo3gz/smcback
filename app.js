@@ -13,33 +13,47 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
     methods: ["GET", "POST"]
   }
 });
 
-// MongoDB connection setup
-MONGODB_URI=mongodb+srv://<user>:<pass>@cluster.mongodb.net/db?retryWrites=true&w=majority&tls=true&tlsAllowInvalidCertificates=true
-
-const MONGO_DB_NAME = 'scoring-system';
+// MongoDB connection variables
+let mongoClient = null;
 let db = null;
 let mongoConnected = false;
 
-MongoClient.connect(MONGO_URI)
-  .then(client => {
-    db = client.db(MONGO_DB_NAME);
+// MongoDB connection
+async function connectToMongoDB() {
+  console.log(process.env.MONGODB_URI);
+  try {
+    mongoClient = new MongoClient(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    
+    await mongoClient.connect();
+    db = mongoClient.db(process.env.MONGO_DB_NAME || 'scoring-system');
     mongoConnected = true;
-    console.log('Connected to MongoDB');
-    initializeDefaultData();
-  })
-  .catch(err => {
+    
+    console.log('✅ Connected to MongoDB');
+    
+    // Initialize default data after successful connection
+    await initializeDefaultData();
+    
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err);
+    console.log('📝 Falling back to in-memory storage');
     mongoConnected = false;
-    console.error('Failed to connect to MongoDB:', err);
-  });
+  }
+}
+
+// Initialize MongoDB connection
+connectToMongoDB();
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true
 }));
 app.use(express.json());
@@ -105,14 +119,14 @@ async function initializeDefaultData() {
     const userCount = await db.collection('users').countDocuments();
     if (userCount === 0) {
       await db.collection('users').insertMany(users);
-      console.log('Default users initialized in MongoDB');
+      console.log('✅ Default users initialized in MongoDB');
     }
 
     // Initialize countries if collection is empty
     const countryCount = await db.collection('countries').countDocuments();
     if (countryCount === 0) {
       await db.collection('countries').insertMany(countries);
-      console.log('Default countries initialized in MongoDB');
+      console.log('✅ Default countries initialized in MongoDB');
     }
 
     // Create indexes for better performance
@@ -123,8 +137,10 @@ async function initializeDefaultData() {
     await db.collection('notifications').createIndex({ timestamp: -1 });
     await db.collection('promoCodes').createIndex({ code: 1, teamId: 1 });
 
+    console.log('✅ Database indexes created successfully');
+
   } catch (error) {
-    console.error('Error initializing default data:', error);
+    console.error('❌ Error initializing default data:', error);
   }
 }
 
@@ -144,7 +160,9 @@ async function findUserById(id) {
     if (!user) {
       try {
         user = await db.collection('users').findOne({ _id: new ObjectId(id) });
-      } catch {}
+      } catch (e) {
+        // Invalid ObjectId format, ignore
+      }
     }
     return user;
   } else {
@@ -325,40 +343,45 @@ const requireAdmin = (req, res, next) => {
 
 // Routes
 app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-  
-  const user = await findUserByUsername(username);
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  const validPassword = await bcrypt.compare(password, user.password);
-  if (!validPassword) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  const token = jwt.sign(
-    { id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: false, // Set to true in production with HTTPS
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  });
-
-  res.json({
-    user: {
-      id: user.id || user._id,
-      username: user.username,
-      role: user.role,
-      teamName: user.teamName,
-      coins: user.coins,
-      score: user.score
+  try {
+    const { username, password } = req.body;
+    
+    const user = await findUserByUsername(username);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
-  });
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
+    res.json({
+      user: {
+        id: user.id || user._id,
+        username: user.username,
+        role: user.role,
+        teamName: user.teamName,
+        coins: user.coins,
+        score: user.score
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/api/logout', (req, res) => {
@@ -367,303 +390,363 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/user', authenticateToken, async (req, res) => {
-  const user = await findUserById(req.user.id);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+  try {
+    const user = await findUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      id: user.id || user._id,
+      username: user.username,
+      role: user.role,
+      teamName: user.teamName,
+      coins: user.coins,
+      score: user.score
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  
-  res.json({
-    id: user.id || user._id,
-    username: user.username,
-    role: user.role,
-    teamName: user.teamName,
-    coins: user.coins,
-    score: user.score
-  });
 });
 
 app.get('/api/scoreboard', async (req, res) => {
-  const users = await getAllUsers();
-  const scoreboard = users
-    .filter(user => user.role === 'user')
-    .map(user => ({
-      id: user.id || user._id,
-      teamName: user.teamName,
-      score: user.score,
-      coins: user.coins
-    }))
-    .sort((a, b) => b.score - a.score);
-  
-  res.json(scoreboard);
+  try {
+    const users = await getAllUsers();
+    const scoreboard = users
+      .filter(user => user.role === 'user')
+      .map(user => ({
+        id: user.id || user._id,
+        teamName: user.teamName,
+        score: user.score,
+        coins: user.coins
+      }))
+      .sort((a, b) => b.score - a.score);
+    
+    res.json(scoreboard);
+  } catch (error) {
+    console.error('Get scoreboard error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/api/countries', async (req, res) => {
-  const countries = await getAllCountries();
-  res.json(countries);
+  try {
+    const countries = await getAllCountries();
+    res.json(countries);
+  } catch (error) {
+    console.error('Get countries error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/api/countries/buy', authenticateToken, async (req, res) => {
-  const { countryId } = req.body;
-  const user = await findUserById(req.user.id);
-  const country = await findCountryById(countryId);
+  try {
+    const { countryId } = req.body;
+    const user = await findUserById(req.user.id);
+    const country = await findCountryById(countryId);
 
-  if (!country) {
-    return res.status(404).json({ error: 'Country not found' });
-  }
-
-  if (country.owner) {
-    return res.status(400).json({ error: 'Country already owned' });
-  }
-
-  if (user.coins < country.cost) {
-    return res.status(400).json({ error: 'Insufficient coins' });
-  }
-
-  const newCoins = user.coins - country.cost;
-  const newScore = user.score + country.score;
-  const userId = user.id || user._id;
-
-  // Update user
-  await updateUserById(req.user.id, { 
-    coins: newCoins, 
-    score: newScore 
-  });
-
-  // Update country
-  await updateCountryById(countryId, { owner: userId });
-
-  // Notify all clients about the update
-  const updatedUsers = await getAllUsers();
-  const updatedCountries = await getAllCountries();
-  
-  io.emit('scoreboard-update', updatedUsers);
-  io.emit('countries-update', updatedCountries);
-
-  res.json({ 
-    message: `Successfully bought ${country.name}`,
-    user: {
-      coins: newCoins,
-      score: newScore
+    if (!country) {
+      return res.status(404).json({ error: 'Country not found' });
     }
-  });
+
+    if (country.owner) {
+      return res.status(400).json({ error: 'Country already owned' });
+    }
+
+    if (user.coins < country.cost) {
+      return res.status(400).json({ error: 'Insufficient coins' });
+    }
+
+    const newCoins = user.coins - country.cost;
+    const newScore = user.score + country.score;
+    const userId = user.id || user._id;
+
+    // Update user
+    await updateUserById(req.user.id, { 
+      coins: newCoins, 
+      score: newScore 
+    });
+
+    // Update country
+    await updateCountryById(countryId, { owner: userId });
+
+    // Notify all clients about the update
+    const updatedUsers = await getAllUsers();
+    const updatedCountries = await getAllCountries();
+    
+    io.emit('scoreboard-update', updatedUsers);
+    io.emit('countries-update', updatedCountries);
+
+    res.json({ 
+      message: `Successfully bought ${country.name}`,
+      user: {
+        coins: newCoins,
+        score: newScore
+      }
+    });
+  } catch (error) {
+    console.error('Buy country error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/api/inventory', authenticateToken, async (req, res) => {
-  const inventory = await getUserInventory(req.user.id);
-  res.json(inventory);
+  try {
+    const inventory = await getUserInventory(req.user.id);
+    res.json(inventory);
+  } catch (error) {
+    console.error('Get inventory error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/api/cards/use', authenticateToken, async (req, res) => {
-  const { cardId, selectedTeam, description } = req.body;
-  const user = await findUserById(req.user.id);
-  const inventory = await getUserInventory(req.user.id);
-  
-  const card = inventory.find(card => card.id === cardId);
-  if (!card) {
-    return res.status(404).json({ error: 'Card not found in inventory' });
+  try {
+    const { cardId, selectedTeam, description } = req.body;
+    const user = await findUserById(req.user.id);
+    const inventory = await getUserInventory(req.user.id);
+    
+    const card = inventory.find(card => card.id === cardId);
+    if (!card) {
+      return res.status(404).json({ error: 'Card not found in inventory' });
+    }
+
+    // Remove card from inventory
+    await removeFromUserInventory(req.user.id, cardId);
+
+    // Create notification for admin
+    const notification = {
+      id: Date.now().toString(),
+      type: 'card-used',
+      teamId: req.user.id,
+      teamName: user.teamName,
+      cardName: card.name,
+      cardType: card.type,
+      selectedTeam,
+      description,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    await addNotification(notification);
+    io.emit('admin-notification', notification);
+
+    res.json({ message: 'Card used successfully' });
+  } catch (error) {
+    console.error('Use card error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  // Remove card from inventory
-  await removeFromUserInventory(req.user.id, cardId);
-
-  // Create notification for admin
-  const notification = {
-    id: Date.now().toString(),
-    type: 'card-used',
-    teamId: req.user.id,
-    teamName: user.teamName,
-    cardName: card.name,
-    cardType: card.type,
-    selectedTeam,
-    description,
-    timestamp: new Date().toISOString(),
-    read: false
-  };
-
-  await addNotification(notification);
-  io.emit('admin-notification', notification);
-
-  res.json({ message: 'Card used successfully' });
 });
 
 app.post('/api/spin', authenticateToken, async (req, res) => {
-  const { spinType, promoCode } = req.body;
-  const user = await findUserById(req.user.id);
-  
-  let cost = 50;
-  if (spinType === 'random') cost = 25;
+  try {
+    const { spinType, promoCode } = req.body;
+    const user = await findUserById(req.user.id);
+    
+    let cost = 50;
+    if (spinType === 'random') cost = 25;
 
-  // Check promo code
-  if (promoCode) {
-    const promo = await findPromoCode(promoCode, req.user.id);
-    if (promo) {
-      cost = Math.floor(cost * (1 - promo.discount / 100));
-      await markPromoCodeAsUsed(promoCode, req.user.id);
+    // Check promo code
+    if (promoCode) {
+      const promo = await findPromoCode(promoCode, req.user.id);
+      if (promo) {
+        cost = Math.floor(cost * (1 - promo.discount / 100));
+        await markPromoCodeAsUsed(promoCode, req.user.id);
+      }
     }
+
+    if (user.coins < cost) {
+      return res.status(400).json({ error: 'Insufficient coins' });
+    }
+
+    const newCoins = user.coins - cost;
+    await updateUserById(req.user.id, { coins: newCoins });
+
+    // Generate random card based on spin type
+    const cards = getCardsByType(spinType);
+    const randomCard = cards[Math.floor(Math.random() * cards.length)];
+    
+    const cardToAdd = {
+      ...randomCard,
+      id: Date.now().toString(),
+      obtainedAt: new Date().toISOString()
+    };
+
+    await addToUserInventory(req.user.id, cardToAdd);
+
+    io.emit('user-update', {
+      id: user.id || user._id,
+      coins: newCoins,
+      score: user.score
+    });
+
+    res.json({ 
+      card: randomCard,
+      cost,
+      remainingCoins: newCoins
+    });
+  } catch (error) {
+    console.error('Spin error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  if (user.coins < cost) {
-    return res.status(400).json({ error: 'Insufficient coins' });
-  }
-
-  const newCoins = user.coins - cost;
-  await updateUserById(req.user.id, { coins: newCoins });
-
-  // Generate random card based on spin type
-  const cards = getCardsByType(spinType);
-  const randomCard = cards[Math.floor(Math.random() * cards.length)];
-  
-  const cardToAdd = {
-    ...randomCard,
-    id: Date.now().toString(),
-    obtainedAt: new Date().toISOString()
-  };
-
-  await addToUserInventory(req.user.id, cardToAdd);
-
-  io.emit('user-update', {
-    id: user.id || user._id,
-    coins: newCoins,
-    score: user.score
-  });
-
-  res.json({ 
-    card: randomCard,
-    cost,
-    remainingCoins: newCoins
-  });
 });
 
 // Admin routes
 app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req, res) => {
-  const notifications = await getAllNotifications();
-  res.json(notifications);
+  try {
+    const notifications = await getAllNotifications();
+    res.json(notifications);
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, res) => {
-  const { code, teamId, discount } = req.body;
-  
-  const promoCode = {
-    id: Date.now().toString(),
-    code,
-    teamId,
-    discount,
-    used: false,
-    createdAt: new Date().toISOString()
-  };
-  
-  await addPromoCode(promoCode);
-  
-  // Notify the specific team
-  const user = await findUserById(teamId);
-  if (user) {
-    const notification = {
+  try {
+    const { code, teamId, discount } = req.body;
+    
+    const promoCode = {
       id: Date.now().toString(),
-      type: 'promo-code',
-      message: `You received a promo code: ${code} with ${discount}% discount!`,
-      timestamp: new Date().toISOString()
+      code,
+      teamId,
+      discount,
+      used: false,
+      createdAt: new Date().toISOString()
     };
     
-    io.to(teamId).emit('notification', notification);
+    await addPromoCode(promoCode);
+    
+    // Notify the specific team
+    const user = await findUserById(teamId);
+    if (user) {
+      const notification = {
+        id: Date.now().toString(),
+        type: 'promo-code',
+        message: `You received a promo code: ${code} with ${discount}% discount!`,
+        timestamp: new Date().toISOString()
+      };
+      
+      io.to(teamId).emit('notification', notification);
+    }
+    
+    res.json(promoCode);
+  } catch (error) {
+    console.error('Create promo code error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  
-  res.json(promoCode);
 });
 
 app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) => {
-  const { teamId, cardName, cardType } = req.body;
-  const user = await findUserById(teamId);
-  
-  if (!user) {
-    return res.status(404).json({ error: 'Team not found' });
+  try {
+    const { teamId, cardName, cardType } = req.body;
+    const user = await findUserById(teamId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    const card = {
+      id: Date.now().toString(),
+      name: cardName,
+      type: cardType,
+      obtainedAt: new Date().toISOString()
+    };
+
+    await addToUserInventory(teamId, card);
+
+    // Notify the team
+    const notification = {
+      id: Date.now().toString(),
+      type: 'card-received',
+      message: `You received a new card: ${cardName}`,
+      timestamp: new Date().toISOString()
+    };
+
+    io.to(teamId).emit('notification', notification);
+
+    res.json(card);
+  } catch (error) {
+    console.error('Give card error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const card = {
-    id: Date.now().toString(),
-    name: cardName,
-    type: cardType,
-    obtainedAt: new Date().toISOString()
-  };
-
-  await addToUserInventory(teamId, card);
-
-  // Notify the team
-  const notification = {
-    id: Date.now().toString(),
-    type: 'card-received',
-    message: `You received a new card: ${cardName}`,
-    timestamp: new Date().toISOString()
-  };
-
-  io.to(teamId).emit('notification', notification);
-
-  res.json(card);
 });
 
 app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) => {
-  const { teamId, amount, reason } = req.body;
-  const user = await findUserById(teamId);
-  
-  if (!user) {
-    return res.status(404).json({ error: 'Team not found' });
-  }
-
-  const newCoins = user.coins + amount;
-  await updateUserById(teamId, { coins: newCoins });
-
-  // Notify the team
-  const notification = {
-    id: Date.now().toString(),
-    type: 'coins-updated',
-    message: `${amount > 0 ? '+' : ''}${amount} coins: ${reason}`,
-    timestamp: new Date().toISOString()
-  };
-
-  io.to(teamId).emit('notification', notification);
-  
-  const updatedUsers = await getAllUsers();
-  io.emit('scoreboard-update', updatedUsers);
-
-  res.json({ 
-    message: 'Coins updated successfully',
-    user: {
-      coins: newCoins,
-      score: user.score
+  try {
+    const { teamId, amount, reason } = req.body;
+    const user = await findUserById(teamId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'Team not found' });
     }
-  });
+
+    const newCoins = user.coins + amount;
+    await updateUserById(teamId, { coins: newCoins });
+
+    // Notify the team
+    const notification = {
+      id: Date.now().toString(),
+      type: 'coins-updated',
+      message: `${amount > 0 ? '+' : ''}${amount} coins: ${reason}`,
+      timestamp: new Date().toISOString()
+    };
+
+    io.to(teamId).emit('notification', notification);
+    
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+
+    res.json({ 
+      message: 'Coins updated successfully',
+      user: {
+        coins: newCoins,
+        score: user.score
+      }
+    });
+  } catch (error) {
+    console.error('Update coins error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) => {
-  const { teamId, amount, reason } = req.body;
-  const user = await findUserById(teamId);
-  
-  if (!user) {
-    return res.status(404).json({ error: 'Team not found' });
-  }
-
-  const newScore = user.score + amount;
-  await updateUserById(teamId, { score: newScore });
-
-  // Notify the team
-  const notification = {
-    id: Date.now().toString(),
-    type: 'score-updated',
-    message: `${amount > 0 ? '+' : ''}${amount} points: ${reason}`,
-    timestamp: new Date().toISOString()
-  };
-
-  io.to(teamId).emit('notification', notification);
-  
-  const updatedUsers = await getAllUsers();
-  io.emit('scoreboard-update', updatedUsers);
-
-  res.json({ 
-    message: 'Score updated successfully',
-    user: {
-      coins: user.coins,
-      score: newScore
+  try {
+    const { teamId, amount, reason } = req.body;
+    const user = await findUserById(teamId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'Team not found' });
     }
-  });
+
+    const newScore = user.score + amount;
+    await updateUserById(teamId, { score: newScore });
+
+    // Notify the team
+    const notification = {
+      id: Date.now().toString(),
+      type: 'score-updated',
+      message: `${amount > 0 ? '+' : ''}${amount} points: ${reason}`,
+      timestamp: new Date().toISOString()
+    };
+
+    io.to(teamId).emit('notification', notification);
+    
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+
+    res.json({ 
+      message: 'Score updated successfully',
+      user: {
+        coins: user.coins,
+        score: newScore
+      }
+    });
+  } catch (error) {
+    console.error('Update score error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Helper function to get cards by type
@@ -716,6 +799,15 @@ io.on('connection', (socket) => {
   });
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    mongodb: mongoConnected ? 'Connected' : 'Disconnected',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
@@ -725,8 +817,20 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Shutting down gracefully...');
+  if (mongoClient) {
+    await mongoClient.close();
+    console.log('MongoDB connection closed');
+  }
+  process.exit(0);
+});
+
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:3000'}`);
 });
 
