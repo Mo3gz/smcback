@@ -7,6 +7,8 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 require('dotenv').config();
 const { MongoClient, ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 const app = express();
 const server = http.createServer(app);
@@ -325,6 +327,24 @@ function getUserId(req) {
   return req.body.id || req.query.id;
 }
 
+// Authentication middleware
+function authenticateToken(req, res, next) {
+  const token = req.cookies.token || (req.headers.authorization && req.headers.authorization.split(' ')[1]);
+  if (!token) return res.status(401).json({ error: 'Access token required' });
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+}
+// Admin middleware
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
 // Routes
 app.post('/api/login', async (req, res) => {
   try {
@@ -339,6 +359,14 @@ app.post('/api/login', async (req, res) => {
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    const token = jwt.sign({ id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName }, JWT_SECRET, { expiresIn: '24h' });
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000
+    });
 
     res.json({
       user: {
@@ -357,13 +385,13 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' });
   res.json({ message: 'Logged out successfully' });
 });
 
-app.get('/api/user', async (req, res) => {
+app.get('/api/user', authenticateToken, async (req, res) => {
   try {
-    const user = await findUserById(getUserId(req));
+    const user = await findUserById(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -412,10 +440,10 @@ app.get('/api/countries', async (req, res) => {
   }
 });
 
-app.post('/api/countries/buy', async (req, res) => {
+app.post('/api/countries/buy', authenticateToken, async (req, res) => {
   try {
     const { countryId } = req.body;
-    const user = await findUserById(getUserId(req));
+    const user = await findUserById(req.user.id);
     const country = await findCountryById(countryId);
 
     if (!country) {
@@ -435,7 +463,7 @@ app.post('/api/countries/buy', async (req, res) => {
     const userId = user.id || user._id;
 
     // Update user
-    await updateUserById(getUserId(req), { 
+    await updateUserById(req.user.id, { 
       coins: newCoins, 
       score: newScore 
     });
@@ -463,9 +491,9 @@ app.post('/api/countries/buy', async (req, res) => {
   }
 });
 
-app.get('/api/inventory', async (req, res) => {
+app.get('/api/inventory', authenticateToken, async (req, res) => {
   try {
-    const inventory = await getUserInventory(getUserId(req));
+    const inventory = await getUserInventory(req.user.id);
     res.json(inventory);
   } catch (error) {
     console.error('Get inventory error:', error);
@@ -473,11 +501,11 @@ app.get('/api/inventory', async (req, res) => {
   }
 });
 
-app.post('/api/cards/use', async (req, res) => {
+app.post('/api/cards/use', authenticateToken, async (req, res) => {
   try {
     const { cardId, selectedTeam, description } = req.body;
-    const user = await findUserById(getUserId(req));
-    const inventory = await getUserInventory(getUserId(req));
+    const user = await findUserById(req.user.id);
+    const inventory = await getUserInventory(req.user.id);
     
     const card = inventory.find(card => card.id === cardId);
     if (!card) {
@@ -485,13 +513,13 @@ app.post('/api/cards/use', async (req, res) => {
     }
 
     // Remove card from inventory
-    await removeFromUserInventory(getUserId(req), cardId);
+    await removeFromUserInventory(req.user.id, cardId);
 
     // Create notification for admin
     const notification = {
       id: Date.now().toString(),
       type: 'card-used',
-      teamId: getUserId(req),
+      teamId: req.user.id,
       teamName: user.teamName,
       cardName: card.name,
       cardType: card.type,
@@ -511,20 +539,20 @@ app.post('/api/cards/use', async (req, res) => {
   }
 });
 
-app.post('/api/spin', async (req, res) => {
+app.post('/api/spin', authenticateToken, async (req, res) => {
   try {
     const { spinType, promoCode } = req.body;
-    const user = await findUserById(getUserId(req));
+    const user = await findUserById(req.user.id);
     
     let cost = 50;
     if (spinType === 'random') cost = 25;
 
     // Check promo code
     if (promoCode) {
-      const promo = await findPromoCode(promoCode, getUserId(req));
+      const promo = await findPromoCode(promoCode, req.user.id);
       if (promo) {
         cost = Math.floor(cost * (1 - promo.discount / 100));
-        await markPromoCodeAsUsed(promoCode, getUserId(req));
+        await markPromoCodeAsUsed(promoCode, req.user.id);
       }
     }
 
@@ -533,7 +561,7 @@ app.post('/api/spin', async (req, res) => {
     }
 
     const newCoins = user.coins - cost;
-    await updateUserById(getUserId(req), { coins: newCoins });
+    await updateUserById(req.user.id, { coins: newCoins });
 
     // Generate random card based on spin type
     const cards = getCardsByType(spinType);
@@ -545,7 +573,7 @@ app.post('/api/spin', async (req, res) => {
       obtainedAt: new Date().toISOString()
     };
 
-    await addToUserInventory(getUserId(req), cardToAdd);
+    await addToUserInventory(req.user.id, cardToAdd);
 
     io.emit('user-update', {
       id: user.id || user._id,
@@ -565,7 +593,7 @@ app.post('/api/spin', async (req, res) => {
 });
 
 // Admin routes
-app.get('/api/admin/notifications', async (req, res) => {
+app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const notifications = await getAllNotifications();
     res.json(notifications);
@@ -575,7 +603,7 @@ app.get('/api/admin/notifications', async (req, res) => {
   }
 });
 
-app.post('/api/admin/promocodes', async (req, res) => {
+app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { code, teamId, discount } = req.body;
     
@@ -610,7 +638,7 @@ app.post('/api/admin/promocodes', async (req, res) => {
   }
 });
 
-app.post('/api/admin/cards', async (req, res) => {
+app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { teamId, cardName, cardType } = req.body;
     const user = await findUserById(teamId);
@@ -645,7 +673,7 @@ app.post('/api/admin/cards', async (req, res) => {
   }
 });
 
-app.post('/api/admin/coins', async (req, res) => {
+app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { teamId, amount, reason } = req.body;
     const user = await findUserById(teamId);
@@ -683,7 +711,7 @@ app.post('/api/admin/coins', async (req, res) => {
   }
 });
 
-app.post('/api/admin/score', async (req, res) => {
+app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { teamId, amount, reason } = req.body;
     const user = await findUserById(teamId);
