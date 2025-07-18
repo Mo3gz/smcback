@@ -338,10 +338,14 @@ function authenticateToken(req, res, next) {
     next();
   });
 }
-// Admin middleware
+// Admin middleware with better error handling
 function requireAdmin(req, res, next) {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+  console.log('Admin check - User:', req.user);
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required. User role: ' + req.user.role });
   }
   next();
 }
@@ -746,6 +750,24 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
     });
   } catch (error) {
     console.error('Update score error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add route to check admin status
+app.get('/api/admin/check', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    res.json({ 
+      message: 'Admin access confirmed',
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        teamName: req.user.teamName
+      }
+    });
+  } catch (error) {
+    console.error('Admin check error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
