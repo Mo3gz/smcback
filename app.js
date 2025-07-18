@@ -320,6 +320,11 @@ async function markPromoCodeAsUsed(code, teamId) {
   }
 }
 
+// Helper to get user id from body or query
+function getUserId(req) {
+  return req.body.id || req.query.id;
+}
+
 // Routes
 app.post('/api/login', async (req, res) => {
   try {
@@ -358,7 +363,7 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/user', async (req, res) => {
   try {
-    const user = await findUserById(req.body.id);
+    const user = await findUserById(getUserId(req));
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -410,7 +415,7 @@ app.get('/api/countries', async (req, res) => {
 app.post('/api/countries/buy', async (req, res) => {
   try {
     const { countryId } = req.body;
-    const user = await findUserById(req.body.id);
+    const user = await findUserById(getUserId(req));
     const country = await findCountryById(countryId);
 
     if (!country) {
@@ -430,7 +435,7 @@ app.post('/api/countries/buy', async (req, res) => {
     const userId = user.id || user._id;
 
     // Update user
-    await updateUserById(req.body.id, { 
+    await updateUserById(getUserId(req), { 
       coins: newCoins, 
       score: newScore 
     });
@@ -460,7 +465,7 @@ app.post('/api/countries/buy', async (req, res) => {
 
 app.get('/api/inventory', async (req, res) => {
   try {
-    const inventory = await getUserInventory(req.body.id);
+    const inventory = await getUserInventory(getUserId(req));
     res.json(inventory);
   } catch (error) {
     console.error('Get inventory error:', error);
@@ -471,8 +476,8 @@ app.get('/api/inventory', async (req, res) => {
 app.post('/api/cards/use', async (req, res) => {
   try {
     const { cardId, selectedTeam, description } = req.body;
-    const user = await findUserById(req.body.id);
-    const inventory = await getUserInventory(req.body.id);
+    const user = await findUserById(getUserId(req));
+    const inventory = await getUserInventory(getUserId(req));
     
     const card = inventory.find(card => card.id === cardId);
     if (!card) {
@@ -480,13 +485,13 @@ app.post('/api/cards/use', async (req, res) => {
     }
 
     // Remove card from inventory
-    await removeFromUserInventory(req.body.id, cardId);
+    await removeFromUserInventory(getUserId(req), cardId);
 
     // Create notification for admin
     const notification = {
       id: Date.now().toString(),
       type: 'card-used',
-      teamId: req.body.id,
+      teamId: getUserId(req),
       teamName: user.teamName,
       cardName: card.name,
       cardType: card.type,
@@ -509,17 +514,17 @@ app.post('/api/cards/use', async (req, res) => {
 app.post('/api/spin', async (req, res) => {
   try {
     const { spinType, promoCode } = req.body;
-    const user = await findUserById(req.body.id);
+    const user = await findUserById(getUserId(req));
     
     let cost = 50;
     if (spinType === 'random') cost = 25;
 
     // Check promo code
     if (promoCode) {
-      const promo = await findPromoCode(promoCode, req.body.id);
+      const promo = await findPromoCode(promoCode, getUserId(req));
       if (promo) {
         cost = Math.floor(cost * (1 - promo.discount / 100));
-        await markPromoCodeAsUsed(promoCode, req.body.id);
+        await markPromoCodeAsUsed(promoCode, getUserId(req));
       }
     }
 
@@ -528,7 +533,7 @@ app.post('/api/spin', async (req, res) => {
     }
 
     const newCoins = user.coins - cost;
-    await updateUserById(req.body.id, { coins: newCoins });
+    await updateUserById(getUserId(req), { coins: newCoins });
 
     // Generate random card based on spin type
     const cards = getCardsByType(spinType);
@@ -540,7 +545,7 @@ app.post('/api/spin', async (req, res) => {
       obtainedAt: new Date().toISOString()
     };
 
-    await addToUserInventory(req.body.id, cardToAdd);
+    await addToUserInventory(getUserId(req), cardToAdd);
 
     io.emit('user-update', {
       id: user.id || user._id,
