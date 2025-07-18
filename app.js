@@ -3,7 +3,6 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 require('dotenv').config();
@@ -66,9 +65,6 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(cookieParser());
-
-// JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // In-memory data storage (fallback when MongoDB is not available)
 let users = [
@@ -324,31 +320,6 @@ async function markPromoCodeAsUsed(code, teamId) {
   }
 }
 
-// Authentication middleware
-const authenticateToken = (req, res, next) => {
-  const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
-  
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid token' });
-    }
-    req.user = user;
-    next();
-  });
-};
-
-// Admin middleware
-const requireAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-};
-
 // Routes
 app.post('/api/login', async (req, res) => {
   try {
@@ -363,18 +334,6 @@ app.post('/api/login', async (req, res) => {
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
-    const token = jwt.sign(
-      { id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    });
 
     res.json({
       user: {
@@ -397,9 +356,9 @@ app.post('/api/logout', (req, res) => {
   res.json({ message: 'Logged out successfully' });
 });
 
-app.get('/api/user', authenticateToken, async (req, res) => {
+app.get('/api/user', async (req, res) => {
   try {
-    const user = await findUserById(req.user.id);
+    const user = await findUserById(req.body.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -448,10 +407,10 @@ app.get('/api/countries', async (req, res) => {
   }
 });
 
-app.post('/api/countries/buy', authenticateToken, async (req, res) => {
+app.post('/api/countries/buy', async (req, res) => {
   try {
     const { countryId } = req.body;
-    const user = await findUserById(req.user.id);
+    const user = await findUserById(req.body.id);
     const country = await findCountryById(countryId);
 
     if (!country) {
@@ -471,7 +430,7 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
     const userId = user.id || user._id;
 
     // Update user
-    await updateUserById(req.user.id, { 
+    await updateUserById(req.body.id, { 
       coins: newCoins, 
       score: newScore 
     });
@@ -499,9 +458,9 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/inventory', authenticateToken, async (req, res) => {
+app.get('/api/inventory', async (req, res) => {
   try {
-    const inventory = await getUserInventory(req.user.id);
+    const inventory = await getUserInventory(req.body.id);
     res.json(inventory);
   } catch (error) {
     console.error('Get inventory error:', error);
@@ -509,11 +468,11 @@ app.get('/api/inventory', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/cards/use', authenticateToken, async (req, res) => {
+app.post('/api/cards/use', async (req, res) => {
   try {
     const { cardId, selectedTeam, description } = req.body;
-    const user = await findUserById(req.user.id);
-    const inventory = await getUserInventory(req.user.id);
+    const user = await findUserById(req.body.id);
+    const inventory = await getUserInventory(req.body.id);
     
     const card = inventory.find(card => card.id === cardId);
     if (!card) {
@@ -521,13 +480,13 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
     }
 
     // Remove card from inventory
-    await removeFromUserInventory(req.user.id, cardId);
+    await removeFromUserInventory(req.body.id, cardId);
 
     // Create notification for admin
     const notification = {
       id: Date.now().toString(),
       type: 'card-used',
-      teamId: req.user.id,
+      teamId: req.body.id,
       teamName: user.teamName,
       cardName: card.name,
       cardType: card.type,
@@ -547,20 +506,20 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/spin', authenticateToken, async (req, res) => {
+app.post('/api/spin', async (req, res) => {
   try {
     const { spinType, promoCode } = req.body;
-    const user = await findUserById(req.user.id);
+    const user = await findUserById(req.body.id);
     
     let cost = 50;
     if (spinType === 'random') cost = 25;
 
     // Check promo code
     if (promoCode) {
-      const promo = await findPromoCode(promoCode, req.user.id);
+      const promo = await findPromoCode(promoCode, req.body.id);
       if (promo) {
         cost = Math.floor(cost * (1 - promo.discount / 100));
-        await markPromoCodeAsUsed(promoCode, req.user.id);
+        await markPromoCodeAsUsed(promoCode, req.body.id);
       }
     }
 
@@ -569,7 +528,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     }
 
     const newCoins = user.coins - cost;
-    await updateUserById(req.user.id, { coins: newCoins });
+    await updateUserById(req.body.id, { coins: newCoins });
 
     // Generate random card based on spin type
     const cards = getCardsByType(spinType);
@@ -581,7 +540,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       obtainedAt: new Date().toISOString()
     };
 
-    await addToUserInventory(req.user.id, cardToAdd);
+    await addToUserInventory(req.body.id, cardToAdd);
 
     io.emit('user-update', {
       id: user.id || user._id,
@@ -601,7 +560,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 });
 
 // Admin routes
-app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/notifications', async (req, res) => {
   try {
     const notifications = await getAllNotifications();
     res.json(notifications);
@@ -611,7 +570,7 @@ app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req,
   }
 });
 
-app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/promocodes', async (req, res) => {
   try {
     const { code, teamId, discount } = req.body;
     
@@ -646,7 +605,7 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
   }
 });
 
-app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/cards', async (req, res) => {
   try {
     const { teamId, cardName, cardType } = req.body;
     const user = await findUserById(teamId);
@@ -681,7 +640,7 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
   }
 });
 
-app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/coins', async (req, res) => {
   try {
     const { teamId, amount, reason } = req.body;
     const user = await findUserById(teamId);
@@ -719,7 +678,7 @@ app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) =
   }
 });
 
-app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/score', async (req, res) => {
   try {
     const { teamId, amount, reason } = req.body;
     const user = await findUserById(teamId);
@@ -835,7 +794,7 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
