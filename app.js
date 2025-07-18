@@ -8,7 +8,7 @@ const path = require('path');
 require('dotenv').config();
 const { MongoClient, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'Aymaan';
 
 const app = express();
 const server = http.createServer(app);
@@ -770,6 +770,23 @@ app.get('/api/admin/check', authenticateToken, requireAdmin, async (req, res) =>
     console.error('Admin check error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// Debug route to print all users
+app.get('/api/debug/users', async (req, res) => {
+  try {
+    const users = await getAllUsers();
+    console.log('All users:', users);
+    res.json(users);
+  } catch (error) {
+    console.error('Debug users error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Log all users on server start
+getAllUsers().then(users => {
+  console.log('All users on server start:', users);
 });
 
 // Helper function to get cards by type
