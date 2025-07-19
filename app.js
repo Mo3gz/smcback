@@ -637,18 +637,23 @@ app.get('/api/debug/auth-state', (req, res) => {
   });
 });
 
+// Helper to get cookie options based on environment
+function getCookieOptions() {
+  const isProduction = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: isProduction ? 'none' : 'lax',
+    secure: isProduction ? true : false,
+    path: '/',
+  };
+}
+
 app.post('/api/logout', (req, res) => {
   try {
     console.log('🚪 === LOGOUT START ===');
     console.log('🚪 Logout request received');
-    const cookieOptions = {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-    };
-    if (process.env.NODE_ENV === 'production') {
-      cookieOptions.secure = true;
-    }
+    const cookieOptions = getCookieOptions();
     res.clearCookie('token', cookieOptions);
     res.clearCookie('authToken', cookieOptions);
     res.clearCookie('session', cookieOptions);
@@ -757,17 +762,7 @@ app.post('/api/login', async (req, res) => {
     };
     console.log('🔑 Creating token with payload:', tokenPayload);
     const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
-    const cookieOptions = {
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'none', // REQUIRED for cross-site cookies
-      secure: true,     // REQUIRED for cross-site cookies (must use HTTPS)
-      path: '/', // Ensure cookie is available for all paths
-    };
-    if (process.env.NODE_ENV === 'production') {
-      cookieOptions.secure = true;
-    }
-    console.log('🔑 Setting cookie with options:', cookieOptions);
+    const cookieOptions = getCookieOptions();
     res.cookie('token', token, cookieOptions);
     console.log('✅ Login successful for user:', username);
     const responseData = {
