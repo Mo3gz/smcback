@@ -469,9 +469,6 @@ function getUserId(req) {
   return req.body.id || req.query.id;
 }
 
-// TARGETED FIX FOR 403 ADMIN ERROR
-const jwt = require('jsonwebtoken');
-
 // Enhanced Authentication middleware with better debugging
 function authenticateToken(req, res, next) {
   console.log('🔐 Authenticating request...');
