@@ -410,11 +410,13 @@ app.post('/api/login', async (req, res) => {
 
     const token = jwt.sign({ id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName }, JWT_SECRET, { expiresIn: '24h' });
     
-    // Configure cookie based on environment
+    // Configure cookie based on environment with better mobile support
     const cookieOptions = {
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      path: '/', // Ensure cookie is available for all paths
+      domain: process.env.NODE_ENV === 'production' ? undefined : undefined // Let browser set domain
     };
     
     // Only set secure in production (HTTPS)
@@ -443,7 +445,9 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/logout', (req, res) => {
   const cookieOptions = {
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    path: '/', // Ensure cookie is cleared from all paths
+    domain: process.env.NODE_ENV === 'production' ? undefined : undefined
   };
   
   if (process.env.NODE_ENV === 'production') {
@@ -506,7 +510,9 @@ app.post('/api/refresh-token', async (req, res) => {
       const cookieOptions = {
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        path: '/', // Ensure cookie is available for all paths
+        domain: process.env.NODE_ENV === 'production' ? undefined : undefined
       };
       
       if (process.env.NODE_ENV === 'production') {
