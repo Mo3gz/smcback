@@ -169,6 +169,9 @@ async function initializeDefaultData() {
     await db.collection('countries').createIndex({ id: 1 });
     await db.collection('inventories').createIndex({ userId: 1 });
     await db.collection('notifications').createIndex({ timestamp: -1 });
+    await db.collection('notifications').createIndex({ userId: 1 });
+    await db.collection('notifications').createIndex({ userId: 1, read: 1 });
+    await db.collection('notifications').createIndex({ type: 1 });
     await db.collection('promoCodes').createIndex({ code: 1, teamId: 1 });
 
     console.log('✅ Database indexes created successfully');
@@ -318,6 +321,108 @@ async function getAllNotifications() {
   }
 }
 
+// Get notifications for a specific user
+async function getUserNotifications(userId) {
+  if (mongoConnected && db) {
+    return await db.collection('notifications').find({
+      $or: [
+        { userId: userId },
+        { type: 'global' },
+        { type: 'scoreboard-update' }
+      ]
+    }).sort({ timestamp: -1 }).toArray();
+  } else {
+    return notifications.filter(notification => 
+      notification.userId === userId || 
+      notification.type === 'global' ||
+      notification.type === 'scoreboard-update'
+    ).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  }
+}
+
+// Get unread notifications count for a user
+async function getUnreadNotificationsCount(userId) {
+  if (mongoConnected && db) {
+    return await db.collection('notifications').countDocuments({
+      $or: [
+        { userId: userId, read: { $ne: true } },
+        { type: 'global', read: { $ne: true } },
+        { type: 'scoreboard-update', read: { $ne: true } }
+      ]
+    });
+  } else {
+    return notifications.filter(notification => 
+      (notification.userId === userId || 
+       notification.type === 'global' ||
+       notification.type === 'scoreboard-update') && 
+      !notification.read
+    ).length;
+  }
+}
+
+// Mark notification as read
+async function markNotificationAsRead(notificationId, userId) {
+  if (mongoConnected && db) {
+    await db.collection('notifications').updateOne(
+      { id: notificationId, userId: userId },
+      { $set: { read: true, readAt: new Date() } }
+    );
+  } else {
+    const notification = notifications.find(n => n.id === notificationId && n.userId === userId);
+    if (notification) {
+      notification.read = true;
+      notification.readAt = new Date();
+    }
+  }
+}
+
+// Mark all notifications as read for a user
+async function markAllNotificationsAsRead(userId) {
+  if (mongoConnected && db) {
+    await db.collection('notifications').updateMany(
+      {
+        $or: [
+          { userId: userId, read: { $ne: true } },
+          { type: 'global', read: { $ne: true } },
+          { type: 'scoreboard-update', read: { $ne: true } }
+        ]
+      },
+      { $set: { read: true, readAt: new Date() } }
+    );
+  } else {
+    notifications.forEach(notification => {
+      if ((notification.userId === userId || 
+           notification.type === 'global' ||
+           notification.type === 'scoreboard-update') && 
+          !notification.read) {
+        notification.read = true;
+        notification.readAt = new Date();
+      }
+    });
+  }
+}
+
+// Delete old notifications (cleanup function)
+async function deleteOldNotifications(daysOld = 30) {
+  if (mongoConnected && db) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+    
+    await db.collection('notifications').deleteMany({
+      timestamp: { $lt: cutoffDate.toISOString() }
+    });
+  } else {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+    
+    const filteredNotifications = notifications.filter(notification => 
+      new Date(notification.timestamp) >= cutoffDate
+    );
+    notifications.length = 0;
+    notifications.push(...filteredNotifications);
+  }
+}
+
 // Helper functions for promo codes (MongoDB or fallback)
 async function addPromoCode(promoCode) {
   if (mongoConnected && db) {
@@ -357,7 +462,11 @@ function getUserId(req) {
 
 // Authentication middleware
 function authenticateToken(req, res, next) {
-  const token = req.cookies.token || (req.headers.authorization && req.headers.authorization.split(' ')[1]);
+  // Try multiple token sources for better mobile compatibility
+  const token = req.cookies.token || 
+                (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
+                req.headers['x-auth-token'] ||
+                req.body.token;
   
   if (!token) {
     return res.status(401).json({ 
@@ -413,13 +522,12 @@ app.post('/api/login', async (req, res) => {
 
     const token = jwt.sign({ id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName }, JWT_SECRET, { expiresIn: '24h' });
     
-    // Configure cookie based on environment with better mobile support
+    // Configure cookie with iOS-friendly settings
     const cookieOptions = {
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'lax', // More permissive for iOS
       path: '/', // Ensure cookie is available for all paths
-      domain: process.env.NODE_ENV === 'production' ? undefined : undefined // Let browser set domain
     };
     
     // Only set secure in production (HTTPS)
@@ -429,6 +537,7 @@ app.post('/api/login', async (req, res) => {
     
     res.cookie('token', token, cookieOptions);
 
+    // Return token in response body for localStorage fallback
     res.json({
       user: {
         id: user.id || user._id,
@@ -437,7 +546,8 @@ app.post('/api/login', async (req, res) => {
         teamName: user.teamName,
         coins: user.coins,
         score: user.score
-      }
+      },
+      token: token // Include token for localStorage fallback
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -448,9 +558,8 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/logout', (req, res) => {
   const cookieOptions = {
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax', // More permissive for iOS
     path: '/', // Ensure cookie is cleared from all paths
-    domain: process.env.NODE_ENV === 'production' ? undefined : undefined
   };
   
   if (process.env.NODE_ENV === 'production') {
@@ -485,7 +594,11 @@ app.get('/api/user', authenticateToken, async (req, res) => {
 // Token refresh endpoint
 app.post('/api/refresh-token', async (req, res) => {
   try {
-    const token = req.cookies.token || (req.headers.authorization && req.headers.authorization.split(' ')[1]);
+    // Try multiple token sources for better mobile compatibility
+    const token = req.cookies.token || 
+                  (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
+                  req.headers['x-auth-token'] ||
+                  req.body.token;
     
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
@@ -509,13 +622,12 @@ app.post('/api/refresh-token', async (req, res) => {
         { expiresIn: '24h' }
       );
 
-      // Set the new cookie
+      // Set the new cookie with iOS-friendly settings
       const cookieOptions = {
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        sameSite: 'lax', // More permissive for iOS
         path: '/', // Ensure cookie is available for all paths
-        domain: process.env.NODE_ENV === 'production' ? undefined : undefined
       };
       
       if (process.env.NODE_ENV === 'production') {
@@ -523,7 +635,12 @@ app.post('/api/refresh-token', async (req, res) => {
       }
       
       res.cookie('token', newToken, cookieOptions);
-      res.json({ message: 'Token refreshed successfully' });
+      
+      // Return new token for localStorage fallback
+      res.json({ 
+        message: 'Token refreshed successfully',
+        token: newToken
+      });
     });
   } catch (error) {
     console.error('Token refresh error:', error);
@@ -591,6 +708,19 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
 
     // Update country
     await updateCountryById(countryId, { owner: userId });
+
+    // Create notification for the country purchase
+    const notification = {
+      id: Date.now().toString(),
+      userId: userId,
+      type: 'country-purchased',
+      message: `You purchased ${country.name} for ${country.cost} coins!`,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    await addNotification(notification);
+    io.to(userId).emit('notification', notification);
 
     // Notify all clients about the update
     const updatedUsers = await getAllUsers();
@@ -705,6 +835,19 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     };
 
     await addToUserInventory(req.user.id, cardToAdd);
+
+    // Create notification for the spin
+    const notification = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'spin',
+      message: `You spun and got: ${randomCard.name} - ${randomCard.effect}`,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    await addNotification(notification);
+    io.to(req.user.id).emit('notification', notification);
 
     // Emit user update for real-time updates
     io.emit('user-update', {
@@ -830,11 +973,14 @@ app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) =
     // Notify the team
     const notification = {
       id: Date.now().toString(),
+      userId: teamId,
       type: 'coins-updated',
       message: `${amount > 0 ? '+' : ''}${amount} coins: ${reason}`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      read: false
     };
 
+    await addNotification(notification);
     io.to(teamId).emit('notification', notification);
     
     const updatedUsers = await getAllUsers();
@@ -868,11 +1014,14 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
     // Notify the team
     const notification = {
       id: Date.now().toString(),
+      userId: teamId,
       type: 'score-updated',
       message: `${amount > 0 ? '+' : ''}${amount} points: ${reason}`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      read: false
     };
 
+    await addNotification(notification);
     io.to(teamId).emit('notification', notification);
     
     const updatedUsers = await getAllUsers();
@@ -909,6 +1058,79 @@ app.get('/api/admin/check', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
+// Get user notifications
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userNotifications = await getUserNotifications(userId);
+    res.json(userNotifications);
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get unread notifications count
+app.get('/api/notifications/unread-count', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const unreadCount = await getUnreadNotificationsCount(userId);
+    res.json({ unreadCount });
+  } catch (error) {
+    console.error('Get unread count error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Mark notification as read
+app.post('/api/notifications/:notificationId/read', authenticateToken, async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    const userId = req.user.id;
+    
+    await markNotificationAsRead(notificationId, userId);
+    res.json({ message: 'Notification marked as read' });
+  } catch (error) {
+    console.error('Mark notification read error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Mark all notifications as read
+app.post('/api/notifications/read-all', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    await markAllNotificationsAsRead(userId);
+    res.json({ message: 'All notifications marked as read' });
+  } catch (error) {
+    console.error('Mark all notifications read error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get all notifications (for admin dashboard)
+app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const notifications = await getAllNotifications();
+    res.json(notifications);
+  } catch (error) {
+    console.error('Get all notifications error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Delete old notifications (cleanup)
+app.delete('/api/admin/notifications/cleanup', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { daysOld = 30 } = req.body;
+    await deleteOldNotifications(daysOld);
+    res.json({ message: `Deleted notifications older than ${daysOld} days` });
+  } catch (error) {
+    console.error('Cleanup notifications error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Debug route to print all users
 app.get('/api/debug/users', async (req, res) => {
   try {
@@ -925,6 +1147,20 @@ app.get('/api/debug/users', async (req, res) => {
 getAllUsers().then(users => {
   console.log('All users on server start:', users);
 });
+
+// Schedule cleanup of old notifications (run daily at 2 AM)
+setInterval(async () => {
+  const now = new Date();
+  if (now.getHours() === 2 && now.getMinutes() === 0) {
+    try {
+      console.log('🧹 Running scheduled notification cleanup...');
+      await deleteOldNotifications(30); // Delete notifications older than 30 days
+      console.log('✅ Notification cleanup completed');
+    } catch (error) {
+      console.error('❌ Notification cleanup failed:', error);
+    }
+  }
+}, 60000); // Check every minute
 
 // Helper function to get cards by type
 function getCardsByType(spinType) {
