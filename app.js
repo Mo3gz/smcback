@@ -760,7 +760,8 @@ app.post('/api/login', async (req, res) => {
     const cookieOptions = {
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax', // More permissive for iOS
+      sameSite: 'none', // REQUIRED for cross-site cookies
+      secure: true,     // REQUIRED for cross-site cookies (must use HTTPS)
       path: '/', // Ensure cookie is available for all paths
     };
     if (process.env.NODE_ENV === 'production') {
