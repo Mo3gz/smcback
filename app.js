@@ -1214,6 +1214,92 @@ app.post('/api/debug/admin-test', async (req, res) => {
   }
 });
 
+// Debug route to create test notifications
+app.post('/api/debug/create-test-notifications', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('Creating test notifications for user:', userId);
+    
+    const testNotifications = [
+      {
+        id: Date.now().toString(),
+        userId: userId,
+        type: 'spin',
+        message: 'You spun and got: Hidden Treasure - +400 Points instantly',
+        timestamp: new Date().toISOString(),
+        read: false
+      },
+      {
+        id: (Date.now() + 1).toString(),
+        userId: userId,
+        type: 'coins-updated',
+        message: '+100 coins: Admin bonus',
+        timestamp: new Date(Date.now() - 60000).toISOString(), // 1 minute ago
+        read: false
+      },
+      {
+        id: (Date.now() + 2).toString(),
+        userId: userId,
+        type: 'score-updated',
+        message: '+50 points: Challenge completed',
+        timestamp: new Date(Date.now() - 120000).toISOString(), // 2 minutes ago
+        read: true
+      },
+      {
+        id: (Date.now() + 3).toString(),
+        userId: userId,
+        type: 'country-purchased',
+        message: 'You purchased: Egypt for 200 coins',
+        timestamp: new Date(Date.now() - 180000).toISOString(), // 3 minutes ago
+        read: false
+      },
+      {
+        id: (Date.now() + 4).toString(),
+        userId: userId,
+        type: 'global',
+        message: 'Welcome to the Scout Game! Good luck!',
+        timestamp: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
+        read: true
+      }
+    ];
+    
+    // Add each notification to the database
+    for (const notification of testNotifications) {
+      await addNotification(notification);
+    }
+    
+    console.log('✅ Created', testNotifications.length, 'test notifications');
+    
+    res.json({ 
+      message: `Created ${testNotifications.length} test notifications`,
+      notifications: testNotifications
+    });
+  } catch (error) {
+    console.error('❌ Error creating test notifications:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug route to get all notifications for a user
+app.get('/api/debug/user-notifications/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log('Getting all notifications for user:', userId);
+    
+    const notifications = await getUserNotifications(userId);
+    console.log('Found notifications:', notifications);
+    
+    res.json({
+      userId,
+      count: notifications.length,
+      notifications
+    });
+  } catch (error) {
+    console.error('❌ Error getting user notifications:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Log all users on server start
 getAllUsers().then(users => {
   console.log('All users on server start:', users);
