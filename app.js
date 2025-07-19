@@ -1611,13 +1611,3 @@ app.get("/api/user", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
-// Add /api/user route to return authenticated user info
-app.get('/api/user', authenticateToken, async (req, res) => {
-  try {
-    res.json(req.user);
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
