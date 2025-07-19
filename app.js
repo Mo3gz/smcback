@@ -1425,6 +1425,28 @@ app.get('/api/debug/user-notifications/:userId', async (req, res) => {
   }
 });
 
+app.get("/api/user", authenticateToken, async (req, res) => {
+  try {
+    // req.user is populated by the authenticateToken middleware
+    const user = await findUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json({
+      id: user.id || user._id,
+      username: user.username,
+      role: user.role,
+      teamName: user.teamName,
+      coins: user.coins,
+      score: user.score,
+    });
+  } catch (error) {
+    console.error("Error fetching user details:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
 // Debug route to check user role
 app.get('/api/debug/user-role/:userId', async (req, res) => {
   try {
@@ -1591,23 +1613,3 @@ server.listen(PORT, '0.0.0.0', () => {
 
 });
 
-app.get("/api/user", authenticateToken, async (req, res) => {
-  try {
-    // req.user is populated by the authenticateToken middleware
-    const user = await findUserById(req.user.id);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    res.json({
-      id: user.id || user._id,
-      username: user.username,
-      role: user.role,
-      teamName: user.teamName,
-      coins: user.coins,
-      score: user.score,
-    });
-  } catch (error) {
-    console.error("Error fetching user details:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
