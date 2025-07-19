@@ -503,6 +503,13 @@ function authenticateToken(req, res, next) {
 // Admin middleware with better error handling
 function requireAdmin(req, res, next) {
   console.log('🔐 Admin check - User:', req.user);
+  console.log('🔐 Full req.user:', JSON.stringify(req.user));
+  if (req.cookies && req.cookies.token) {
+    console.log('🔐 Token from cookie:', req.cookies.token);
+  }
+  if (req.headers && req.headers.authorization) {
+    console.log('🔐 Token from Authorization header:', req.headers.authorization);
+  }
   console.log('🔐 User role:', req.user?.role);
   console.log('🔐 Role type:', typeof req.user?.role);
   console.log('🔐 Role comparison:', req.user?.role === 'admin');
