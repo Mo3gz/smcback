@@ -790,6 +790,19 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
     await addNotification(notification);
     io.emit('admin-notification', notification);
 
+    // Create notification for the user
+    const userNotification = {
+      id: (Date.now() + 1).toString(),
+      userId: req.user.id,
+      type: 'card-used',
+      message: `You used: ${card.name} - ${card.effect}`,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+
+    await addNotification(userNotification);
+    io.to(req.user.id).emit('notification', userNotification);
+
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
 
@@ -1139,6 +1152,42 @@ app.get('/api/debug/users', async (req, res) => {
     res.json(users);
   } catch (error) {
     console.error('Debug users error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug route to test admin login
+app.post('/api/debug/admin-test', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    console.log('Admin test login attempt:', { username, password });
+    
+    const user = await findUserByUsername(username);
+    console.log('Found user:', user);
+    
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    
+    const validPassword = await bcrypt.compare(password, user.password);
+    console.log('Password valid:', validPassword);
+    
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+    
+    res.json({
+      success: true,
+      user: {
+        id: user.id || user._id,
+        username: user.username,
+        role: user.role,
+        teamName: user.teamName,
+        isAdmin: user.role === 'admin'
+      }
+    });
+  } catch (error) {
+    console.error('Admin test error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
