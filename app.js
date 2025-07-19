@@ -82,19 +82,28 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma', 'Accept', 'Origin']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma', 'Accept', 'Origin', 'x-auth-token']
 }));
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Origin', req.headers.origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cache-Control, Pragma, Accept, Origin');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cache-Control, Pragma, Accept, Origin, x-auth-token');
   next();
 });
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Handle preflight requests
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin);
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cache-Control, Pragma, Accept, Origin, x-auth-token');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.status(200).end();
+});
 
 // In-memory data storage (fallback when MongoDB is not available)
 let users = [
@@ -462,34 +471,32 @@ function getUserId(req) {
 
 // Authentication middleware
 function authenticateToken(req, res, next) {
+  console.log('🔐 Authenticating request...');
+  console.log('Headers:', req.headers);
+  
   // Try multiple token sources for better mobile compatibility
   const token = req.cookies.token || 
                 (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
                 req.headers['x-auth-token'] ||
                 req.body.token;
   
-  if (!token) {
-    return res.status(401).json({ 
-      error: 'Access token required',
-      message: 'Please log in to continue'
-    });
-  }
+  console.log('Token found:', token ? 'Yes' : 'No');
   
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  if (!token) {
+    console.log('❌ No token provided');
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
-      console.log('Token verification failed:', err.message);
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({ 
-          error: 'Token expired',
-          message: 'Your session has expired. Please log in again.'
-        });
-      }
-      return res.status(403).json({ 
-        error: 'Invalid token',
-        message: 'Authentication failed. Please log in again.'
-      });
+      console.log('❌ Token verification failed:', err.message);
+      return res.status(401).json({ error: 'Invalid token' });
     }
-    req.user = user;
+    
+    console.log('✅ Token verified successfully');
+    console.log('Decoded user:', { id: decoded.id, username: decoded.username, role: decoded.role });
+    
+    req.user = decoded;
     next();
   });
 }
@@ -508,17 +515,30 @@ function requireAdmin(req, res, next) {
 // Routes
 app.post('/api/login', async (req, res) => {
   try {
+    console.log('🔑 Login attempt:', { username: req.body.username });
+    
     const { username, password } = req.body;
+    
+    if (!username || !password) {
+      console.log('❌ Missing credentials');
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
     
     const user = await findUserByUsername(username);
     if (!user) {
+      console.log('❌ User not found:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    console.log('✅ User found:', { username: user.username, role: user.role });
+
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
+      console.log('❌ Invalid password for user:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    console.log('✅ Password verified for user:', username);
 
     const token = jwt.sign({ id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName }, JWT_SECRET, { expiresIn: '24h' });
     
@@ -537,6 +557,8 @@ app.post('/api/login', async (req, res) => {
     
     res.cookie('token', token, cookieOptions);
 
+    console.log('✅ Login successful for user:', username);
+
     // Return token in response body for localStorage fallback
     res.json({
       user: {
@@ -550,7 +572,7 @@ app.post('/api/login', async (req, res) => {
       token: token // Include token for localStorage fallback
     });
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1264,9 +1286,10 @@ io.on('connection', (socket) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
-    status: 'OK', 
-    mongodb: mongoConnected ? 'Connected' : 'Disconnected',
-    timestamp: new Date().toISOString()
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    mongoConnected,
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
