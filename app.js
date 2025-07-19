@@ -943,6 +943,8 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
 
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
+    // Notify all admins (and listeners) that any inventory has changed
+    io.emit('inventory-update');
 
     res.json({ message: 'Card used successfully' });
   } catch (error) {
