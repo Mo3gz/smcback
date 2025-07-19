@@ -500,81 +500,127 @@ function authenticateToken(req, res, next) {
     next();
   });
 }
-// Admin middleware with better error handling
+// 1. Enhanced logout endpoint
+app.post('/api/logout', (req, res) => {
+  try {
+    console.log('🚪 Logout request received');
+    // Clear all possible cookie variations
+    const cookieOptions = {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+    };
+    if (process.env.NODE_ENV === 'production') {
+      cookieOptions.secure = true;
+    }
+    // Clear the main token cookie
+    res.clearCookie('token', cookieOptions);
+    // Clear any other potential auth cookies
+    res.clearCookie('authToken', cookieOptions);
+    res.clearCookie('session', cookieOptions);
+    console.log('✅ Logout successful - cookies cleared');
+    res.json({ 
+      message: 'Logged out successfully',
+      success: true 
+    });
+  } catch (error) {
+    console.error('❌ Logout error:', error);
+    res.status(500).json({ 
+      error: 'Logout failed',
+      success: false 
+    });
+  }
+});
+
+// 2. Enhanced admin middleware (replace existing requireAdmin function)
 function requireAdmin(req, res, next) {
   console.log('🔐 Admin check - User:', req.user);
-  console.log('🔐 Full req.user:', JSON.stringify(req.user));
-  if (req.cookies && req.cookies.token) {
-    console.log('🔐 Token from cookie:', req.cookies.token);
-  }
-  if (req.headers && req.headers.authorization) {
-    console.log('🔐 Token from Authorization header:', req.headers.authorization);
-  }
-  console.log('🔐 User role:', req.user?.role);
-  console.log('🔐 Role type:', typeof req.user?.role);
-  console.log('🔐 Role comparison:', req.user?.role === 'admin');
-
+  console.log('🔐 Full req.user:', JSON.stringify(req.user, null, 2));
   if (!req.user) {
-    console.log('❌ Admin check failed: No user found');
-    return res.status(401).json({ error: 'Authentication required' });
+    console.log('❌ Admin check failed: No user found in request');
+    return res.status(401).json({ 
+      error: 'Authentication required',
+      details: 'No user found in request'
+    });
   }
-
   // Special case: always allow 'ayman' as admin
   if (req.user.username === 'ayman') {
     console.log('✅ Admin check bypass: username is ayman');
     return next();
   }
-
   // More robust role checking
   const userRole = req.user.role;
   const isAdmin = userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin';
-
-  console.log('🔐 Is admin check:', isAdmin);
-
+  console.log('🔐 User role check:', {
+    userRole,
+    isAdmin,
+    username: req.user.username,
+    userId: req.user.id
+  });
   if (!isAdmin) {
-    console.log('❌ Admin check failed: User role is not admin. Role:', userRole);
+    console.log('❌ Admin check failed: User role is not admin');
     return res.status(403).json({ 
-      error: 'Admin access required. User role: ' + userRole,
-      userRole: userRole,
-      userId: req.user.id,
-      username: req.user.username
+      error: 'Admin access required',
+      details: {
+        userRole: userRole,
+        userId: req.user.id,
+        username: req.user.username,
+        requiredRole: 'admin'
+      }
     });
   }
-
   console.log('✅ Admin check passed for user:', req.user.username);
   next();
 }
 
-// Routes
+// 3. Additional debug endpoint for authentication state
+app.get('/api/debug/auth-state', (req, res) => {
+  res.json({
+    cookies: req.cookies,
+    headers: {
+      authorization: req.headers.authorization,
+      'x-auth-token': req.headers['x-auth-token']
+    },
+    hasToken: !!(req.cookies.token || req.headers.authorization || req.headers['x-auth-token']),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 4. Enhanced login endpoint with better error handling (replace existing login endpoint)
 app.post('/api/login', async (req, res) => {
   try {
     console.log('🔑 Login attempt:', { username: req.body.username });
-    
+    console.log('🔑 Request headers:', req.headers);
+    console.log('🔑 Request cookies:', req.cookies);
     const { username, password } = req.body;
-    
     if (!username || !password) {
       console.log('❌ Missing credentials');
       return res.status(400).json({ error: 'Username and password are required' });
     }
-    
     const user = await findUserByUsername(username);
     if (!user) {
       console.log('❌ User not found:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
-    console.log('✅ User found:', { username: user.username, role: user.role });
-
+    console.log('✅ User found:', { 
+      username: user.username, 
+      role: user.role,
+      id: user.id || user._id 
+    });
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       console.log('❌ Invalid password for user:', username);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
     console.log('✅ Password verified for user:', username);
-
-    const token = jwt.sign({ id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName }, JWT_SECRET, { expiresIn: '24h' });
-    
+    const tokenPayload = { 
+      id: user.id || user._id, 
+      username: user.username, 
+      role: user.role, 
+      teamName: user.teamName 
+    };
+    console.log('🔑 Creating token with payload:', tokenPayload);
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
     // Configure cookie with iOS-friendly settings
     const cookieOptions = {
       httpOnly: true,
@@ -582,18 +628,14 @@ app.post('/api/login', async (req, res) => {
       sameSite: 'lax', // More permissive for iOS
       path: '/', // Ensure cookie is available for all paths
     };
-    
     // Only set secure in production (HTTPS)
     if (process.env.NODE_ENV === 'production') {
       cookieOptions.secure = true;
     }
-    
+    console.log('🔑 Setting cookie with options:', cookieOptions);
     res.cookie('token', token, cookieOptions);
-
     console.log('✅ Login successful for user:', username);
-
-    // Return token in response body for localStorage fallback
-    res.json({
+    const responseData = {
       user: {
         id: user.id || user._id,
         username: user.username,
@@ -603,102 +645,12 @@ app.post('/api/login', async (req, res) => {
         score: user.score
       },
       token: token // Include token for localStorage fallback
-    });
+    };
+    console.log('🔑 Sending response:', responseData);
+    // Return token in response body for localStorage fallback
+    res.json(responseData);
   } catch (error) {
     console.error('❌ Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.post('/api/logout', (req, res) => {
-  const cookieOptions = {
-    httpOnly: true,
-    sameSite: 'lax', // More permissive for iOS
-    path: '/', // Ensure cookie is cleared from all paths
-  };
-  
-  if (process.env.NODE_ENV === 'production') {
-    cookieOptions.secure = true;
-  }
-  
-  res.clearCookie('token', cookieOptions);
-  res.json({ message: 'Logged out successfully' });
-});
-
-app.get('/api/user', authenticateToken, async (req, res) => {
-  try {
-    const user = await findUserById(req.user.id);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({
-      id: user.id || user._id,
-      username: user.username,
-      role: user.role,
-      teamName: user.teamName,
-      coins: user.coins,
-      score: user.score
-    });
-  } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Token refresh endpoint
-app.post('/api/refresh-token', async (req, res) => {
-  try {
-    // Try multiple token sources for better mobile compatibility
-    const token = req.cookies.token || 
-                  (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
-                  req.headers['x-auth-token'] ||
-                  req.body.token;
-    
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    // Verify the existing token
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-      if (err) {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
-
-      // Create a new token with extended expiration
-      const newToken = jwt.sign(
-        { 
-          id: decoded.id, 
-          username: decoded.username, 
-          role: decoded.role, 
-          teamName: decoded.teamName 
-        }, 
-        JWT_SECRET, 
-        { expiresIn: '24h' }
-      );
-
-      // Set the new cookie with iOS-friendly settings
-      const cookieOptions = {
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        sameSite: 'lax', // More permissive for iOS
-        path: '/', // Ensure cookie is available for all paths
-      };
-      
-      if (process.env.NODE_ENV === 'production') {
-        cookieOptions.secure = true;
-      }
-      
-      res.cookie('token', newToken, cookieOptions);
-      
-      // Return new token for localStorage fallback
-      res.json({ 
-        message: 'Token refreshed successfully',
-        token: newToken
-      });
-    });
-  } catch (error) {
-    console.error('Token refresh error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
