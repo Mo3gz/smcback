@@ -55,10 +55,34 @@ async function connectToMongoDB() {
 connectToMongoDB();
 
 // Middleware
-// CORS for deployment: allow Netlify frontend and credentials
+// CORS for deployment: allow multiple origins and better mobile support
+const allowedOrigins = [
+  'https://smcscout.netlify.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://localhost:3000',
+  'https://localhost:3001'
+];
+
 app.use(cors({
-  origin: 'https://smcscout.netlify.app',
-  credentials: true
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      // For development, allow all origins
+      if (process.env.NODE_ENV === 'development') {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 app.use((req, res, next) => {
@@ -331,9 +355,28 @@ function getUserId(req) {
 // Authentication middleware
 function authenticateToken(req, res, next) {
   const token = req.cookies.token || (req.headers.authorization && req.headers.authorization.split(' ')[1]);
-  if (!token) return res.status(401).json({ error: 'Access token required' });
+  
+  if (!token) {
+    return res.status(401).json({ 
+      error: 'Access token required',
+      message: 'Please log in to continue'
+    });
+  }
+  
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+    if (err) {
+      console.log('Token verification failed:', err.message);
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ 
+          error: 'Token expired',
+          message: 'Your session has expired. Please log in again.'
+        });
+      }
+      return res.status(403).json({ 
+        error: 'Invalid token',
+        message: 'Authentication failed. Please log in again.'
+      });
+    }
     req.user = user;
     next();
   });
@@ -366,12 +409,20 @@ app.post('/api/login', async (req, res) => {
     }
 
     const token = jwt.sign({ id: user.id || user._id, username: user.username, role: user.role, teamName: user.teamName }, JWT_SECRET, { expiresIn: '24h' });
-    res.cookie('token', token, {
+    
+    // Configure cookie based on environment
+    const cookieOptions = {
       httpOnly: true,
-      secure: true, // Always true for production (HTTPS)
-      sameSite: 'none', // Required for cross-site cookies
-      maxAge: 24 * 60 * 60 * 1000
-    });
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    };
+    
+    // Only set secure in production (HTTPS)
+    if (process.env.NODE_ENV === 'production') {
+      cookieOptions.secure = true;
+    }
+    
+    res.cookie('token', token, cookieOptions);
 
     res.json({
       user: {
@@ -390,7 +441,16 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'none' });
+  const cookieOptions = {
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+  };
+  
+  if (process.env.NODE_ENV === 'production') {
+    cookieOptions.secure = true;
+  }
+  
+  res.clearCookie('token', cookieOptions);
   res.json({ message: 'Logged out successfully' });
 });
 
@@ -411,6 +471,53 @@ app.get('/api/user', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Get user error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Token refresh endpoint
+app.post('/api/refresh-token', async (req, res) => {
+  try {
+    const token = req.cookies.token || (req.headers.authorization && req.headers.authorization.split(' ')[1]);
+    
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    // Verify the existing token
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+      if (err) {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+
+      // Create a new token with extended expiration
+      const newToken = jwt.sign(
+        { 
+          id: decoded.id, 
+          username: decoded.username, 
+          role: decoded.role, 
+          teamName: decoded.teamName 
+        }, 
+        JWT_SECRET, 
+        { expiresIn: '24h' }
+      );
+
+      // Set the new cookie
+      const cookieOptions = {
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      };
+      
+      if (process.env.NODE_ENV === 'production') {
+        cookieOptions.secure = true;
+      }
+      
+      res.cookie('token', newToken, cookieOptions);
+      res.json({ message: 'Token refreshed successfully' });
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -520,6 +627,13 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
     // Remove card from inventory
     await removeFromUserInventory(req.user.id, cardId);
 
+    // Get target team name if selectedTeam is provided
+    let targetTeamName = '';
+    if (selectedTeam) {
+      const targetTeam = await findUserById(selectedTeam);
+      targetTeamName = targetTeam ? targetTeam.teamName : 'Unknown Team';
+    }
+
     // Create notification for admin
     const notification = {
       id: Date.now().toString(),
@@ -528,7 +642,7 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       teamName: user.teamName,
       cardName: card.name,
       cardType: card.type,
-      selectedTeam,
+      selectedTeam: targetTeamName, // Store team name instead of ID
       description,
       timestamp: new Date().toISOString(),
       read: false
@@ -536,6 +650,9 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
 
     await addNotification(notification);
     io.emit('admin-notification', notification);
+
+    // Notify user that inventory has been updated
+    io.to(req.user.id).emit('inventory-update');
 
     res.json({ message: 'Card used successfully' });
   } catch (error) {
@@ -585,6 +702,9 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       coins: newCoins,
       score: user.score
     });
+
+    // Notify user that inventory has been updated
+    io.to(req.user.id).emit('inventory-update');
 
     res.json({ 
       card: randomCard,
@@ -670,6 +790,9 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
     };
 
     io.to(teamId).emit('notification', notification);
+    
+    // Notify user that inventory has been updated
+    io.to(teamId).emit('inventory-update');
 
     res.json(card);
   } catch (error) {
