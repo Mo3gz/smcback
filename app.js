@@ -502,13 +502,33 @@ function authenticateToken(req, res, next) {
 }
 // Admin middleware with better error handling
 function requireAdmin(req, res, next) {
-  console.log('Admin check - User:', req.user);
+  console.log('🔐 Admin check - User:', req.user);
+  console.log('🔐 User role:', req.user?.role);
+  console.log('🔐 Role type:', typeof req.user?.role);
+  console.log('🔐 Role comparison:', req.user?.role === 'admin');
+  
   if (!req.user) {
+    console.log('❌ Admin check failed: No user found');
     return res.status(401).json({ error: 'Authentication required' });
   }
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required. User role: ' + req.user.role });
+  
+  // More robust role checking
+  const userRole = req.user.role;
+  const isAdmin = userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin';
+  
+  console.log('🔐 Is admin check:', isAdmin);
+  
+  if (!isAdmin) {
+    console.log('❌ Admin check failed: User role is not admin. Role:', userRole);
+    return res.status(403).json({ 
+      error: 'Admin access required. User role: ' + userRole,
+      userRole: userRole,
+      userId: req.user.id,
+      username: req.user.username
+    });
   }
+  
+  console.log('✅ Admin check passed for user:', req.user.username);
   next();
 }
 
@@ -1296,6 +1316,66 @@ app.get('/api/debug/user-notifications/:userId', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error getting user notifications:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug route to check user role
+app.get('/api/debug/user-role/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log('🔍 Checking user role for ID:', userId);
+    
+    const user = await findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    console.log('🔍 Found user:', {
+      id: user.id || user._id,
+      username: user.username,
+      role: user.role,
+      roleType: typeof user.role
+    });
+    
+    res.json({
+      userId: user.id || user._id,
+      username: user.username,
+      role: user.role,
+      roleType: typeof user.role,
+      isAdmin: user.role === 'admin',
+      isAdminCaseInsensitive: user.role?.toLowerCase() === 'admin'
+    });
+  } catch (error) {
+    console.error('❌ Error checking user role:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug route to list all users and their roles
+app.get('/api/debug/all-users', async (req, res) => {
+  try {
+    console.log('🔍 Getting all users...');
+    
+    const allUsers = await getAllUsers();
+    const usersWithRoles = allUsers.map(user => ({
+      id: user.id || user._id,
+      username: user.username,
+      role: user.role,
+      roleType: typeof user.role,
+      isAdmin: user.role === 'admin'
+    }));
+    
+    console.log('🔍 All users with roles:', usersWithRoles);
+    
+    res.json({
+      totalUsers: allUsers.length,
+      adminUsers: usersWithRoles.filter(u => u.isAdmin),
+      regularUsers: usersWithRoles.filter(u => !u.isAdmin),
+      allUsers: usersWithRoles
+    });
+  } catch (error) {
+    console.error('❌ Error getting all users:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
