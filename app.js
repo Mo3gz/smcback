@@ -637,7 +637,6 @@ app.get('/api/debug/auth-state', (req, res) => {
   });
 });
 
-// 1. Enhanced logout endpoint
 app.post('/api/logout', (req, res) => {
   try {
     console.log('🚪 === LOGOUT START ===');
@@ -668,7 +667,6 @@ app.post('/api/logout', (req, res) => {
   }
 });
 
-// 2. Enhanced admin middleware (replace existing requireAdmin function)
 function requireAdmin(req, res, next) {
   console.log('🔐 Admin check - User:', req.user);
   console.log('🔐 Full req.user:', JSON.stringify(req.user, null, 2));
@@ -709,7 +707,6 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// 3. Additional debug endpoint for authentication state
 app.get('/api/debug/auth-state', (req, res) => {
   res.json({
     cookies: req.cookies,
@@ -722,7 +719,6 @@ app.get('/api/debug/auth-state', (req, res) => {
   });
 });
 
-// 4. Enhanced login endpoint with better error handling (replace existing login endpoint)
 app.post('/api/login', async (req, res) => {
   try {
     console.log('🔑 === LOGIN START ===');
