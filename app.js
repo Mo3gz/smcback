@@ -471,12 +471,16 @@ function getUserId(req) {
 
 // Enhanced Authentication middleware with better debugging
 function authenticateToken(req, res, next) {
-  console.log('🔐 Authenticating request...');
+  console.log('🔐 === AUTHENTICATION START ===');
   console.log('🔐 Request URL:', req.url);
   console.log('🔐 Request method:', req.method);
-  console.log('🔐 Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('🔐 Headers:', JSON.stringify({
+    authorization: req.headers.authorization,
+    'x-auth-token': req.headers['x-auth-token'],
+    cookie: req.headers.cookie,
+    origin: req.headers.origin
+  }, null, 2));
   console.log('🔐 Cookies:', JSON.stringify(req.cookies, null, 2));
-  // Try multiple token sources for better mobile compatibility
   const token = req.cookies.token || 
                 (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
                 req.headers['x-auth-token'] ||
@@ -490,6 +494,7 @@ function authenticateToken(req, res, next) {
   );
   if (!token) {
     console.log('❌ No token provided');
+    console.log('🔐 === AUTHENTICATION END (NO TOKEN) ===');
     return res.status(401).json({ 
       error: 'Access token required',
       debug: {
@@ -500,11 +505,13 @@ function authenticateToken(req, res, next) {
     });
   }
   console.log('🔐 Verifying token with JWT_SECRET...');
+  console.log('🔐 JWT_SECRET exists:', JWT_SECRET ? 'Yes' : 'No');
+  console.log('🔐 Token preview:', token.substring(0, 20) + '...');
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       console.log('❌ Token verification failed:', err.message);
-      console.log('❌ Token:', token.substring(0, 20) + '...');
-      console.log('❌ JWT_SECRET:', JWT_SECRET ? 'Set' : 'Not set');
+      console.log('❌ Error details:', err);
+      console.log('🔐 === AUTHENTICATION END (TOKEN INVALID) ===');
       return res.status(401).json({ 
         error: 'Invalid token',
         debug: {
@@ -515,6 +522,7 @@ function authenticateToken(req, res, next) {
     }
     console.log('✅ Token verified successfully');
     console.log('✅ Decoded user:', JSON.stringify(decoded, null, 2));
+    console.log('🔐 === AUTHENTICATION END (SUCCESS) ===');
     req.user = decoded;
     next();
   });
@@ -527,6 +535,7 @@ function requireAdmin(req, res, next) {
   console.log('🔐 User from token:', JSON.stringify(req.user, null, 2));
   if (!req.user) {
     console.log('❌ Admin check failed: No user found in request');
+    console.log('🔐 === ADMIN CHECK END (NO USER) ===');
     return res.status(401).json({ 
       error: 'Authentication required',
       debug: 'No user found in request object'
@@ -537,13 +546,11 @@ function requireAdmin(req, res, next) {
   console.log('🔐   - Username:', req.user.username);
   console.log('🔐   - Role:', req.user.role);
   console.log('🔐   - Role type:', typeof req.user.role);
-  // Special case: always allow 'ayman' as admin
   if (req.user.username === 'ayman') {
     console.log('✅ Admin check BYPASS: username is ayman');
     console.log('🔐 === ADMIN CHECK END (BYPASS) ===');
     return next();
   }
-  // More robust role checking
   const userRole = req.user.role;
   const isAdmin = userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin';
   console.log('🔐 Role check details:');
@@ -633,8 +640,8 @@ app.get('/api/debug/auth-state', (req, res) => {
 // 1. Enhanced logout endpoint
 app.post('/api/logout', (req, res) => {
   try {
+    console.log('🚪 === LOGOUT START ===');
     console.log('🚪 Logout request received');
-    // Clear all possible cookie variations
     const cookieOptions = {
       httpOnly: true,
       sameSite: 'lax',
@@ -643,12 +650,11 @@ app.post('/api/logout', (req, res) => {
     if (process.env.NODE_ENV === 'production') {
       cookieOptions.secure = true;
     }
-    // Clear the main token cookie
     res.clearCookie('token', cookieOptions);
-    // Clear any other potential auth cookies
     res.clearCookie('authToken', cookieOptions);
     res.clearCookie('session', cookieOptions);
     console.log('✅ Logout successful - cookies cleared');
+    console.log('🚪 === LOGOUT END ===');
     res.json({ 
       message: 'Logged out successfully',
       success: true 
@@ -719,9 +725,13 @@ app.get('/api/debug/auth-state', (req, res) => {
 // 4. Enhanced login endpoint with better error handling (replace existing login endpoint)
 app.post('/api/login', async (req, res) => {
   try {
+    console.log('🔑 === LOGIN START ===');
     console.log('🔑 Login attempt:', { username: req.body.username });
-    console.log('🔑 Request headers:', req.headers);
-    console.log('🔑 Request cookies:', req.cookies);
+    console.log('🔑 Request headers:', JSON.stringify({
+      origin: req.headers.origin,
+      'user-agent': req.headers['user-agent'],
+      'content-type': req.headers['content-type']
+    }, null, 2));
     const { username, password } = req.body;
     if (!username || !password) {
       console.log('❌ Missing credentials');
@@ -751,14 +761,12 @@ app.post('/api/login', async (req, res) => {
     };
     console.log('🔑 Creating token with payload:', tokenPayload);
     const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
-    // Configure cookie with iOS-friendly settings
     const cookieOptions = {
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       sameSite: 'lax', // More permissive for iOS
       path: '/', // Ensure cookie is available for all paths
     };
-    // Only set secure in production (HTTPS)
     if (process.env.NODE_ENV === 'production') {
       cookieOptions.secure = true;
     }
@@ -777,10 +785,11 @@ app.post('/api/login', async (req, res) => {
       token: token // Include token for localStorage fallback
     };
     console.log('🔑 Sending response:', responseData);
-    // Return token in response body for localStorage fallback
+    console.log('🔑 === LOGIN END (SUCCESS) ===');
     res.json(responseData);
   } catch (error) {
     console.error('❌ Login error:', error);
+    console.log('🔑 === LOGIN END (ERROR) ===');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
