@@ -706,11 +706,16 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     await addToUserInventory(req.user.id, cardToAdd);
 
+    // Emit user update for real-time updates
     io.emit('user-update', {
       id: user.id || user._id,
       coins: newCoins,
       score: user.score
     });
+
+    // Emit scoreboard update for all clients
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
 
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
