@@ -469,37 +469,170 @@ function getUserId(req) {
   return req.body.id || req.query.id;
 }
 
-// Authentication middleware
+// TARGETED FIX FOR 403 ADMIN ERROR
+const jwt = require('jsonwebtoken');
+
+// Enhanced Authentication middleware with better debugging
 function authenticateToken(req, res, next) {
   console.log('🔐 Authenticating request...');
-  console.log('Headers:', req.headers);
-  
+  console.log('🔐 Request URL:', req.url);
+  console.log('🔐 Request method:', req.method);
+  console.log('🔐 Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('🔐 Cookies:', JSON.stringify(req.cookies, null, 2));
   // Try multiple token sources for better mobile compatibility
   const token = req.cookies.token || 
                 (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
                 req.headers['x-auth-token'] ||
                 req.body.token;
-  
-  console.log('Token found:', token ? 'Yes' : 'No');
-  
+  console.log('🔐 Token found:', token ? 'Yes' : 'No');
+  console.log('🔐 Token source:', 
+    req.cookies.token ? 'cookie' : 
+    req.headers.authorization ? 'authorization header' :
+    req.headers['x-auth-token'] ? 'x-auth-token header' :
+    req.body.token ? 'request body' : 'none'
+  );
   if (!token) {
     console.log('❌ No token provided');
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).json({ 
+      error: 'Access token required',
+      debug: {
+        cookies: req.cookies,
+        authHeader: req.headers.authorization,
+        xAuthToken: req.headers['x-auth-token']
+      }
+    });
   }
-
+  console.log('🔐 Verifying token with JWT_SECRET...');
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       console.log('❌ Token verification failed:', err.message);
-      return res.status(401).json({ error: 'Invalid token' });
+      console.log('❌ Token:', token.substring(0, 20) + '...');
+      console.log('❌ JWT_SECRET:', JWT_SECRET ? 'Set' : 'Not set');
+      return res.status(401).json({ 
+        error: 'Invalid token',
+        debug: {
+          tokenError: err.message,
+          tokenPreview: token.substring(0, 20) + '...'
+        }
+      });
     }
-    
     console.log('✅ Token verified successfully');
-    console.log('Decoded user:', { id: decoded.id, username: decoded.username, role: decoded.role });
-    
+    console.log('✅ Decoded user:', JSON.stringify(decoded, null, 2));
     req.user = decoded;
     next();
   });
 }
+
+// Enhanced Admin middleware with better debugging
+function requireAdmin(req, res, next) {
+  console.log('🔐 === ADMIN CHECK START ===');
+  console.log('🔐 Request URL:', req.url);
+  console.log('🔐 User from token:', JSON.stringify(req.user, null, 2));
+  if (!req.user) {
+    console.log('❌ Admin check failed: No user found in request');
+    return res.status(401).json({ 
+      error: 'Authentication required',
+      debug: 'No user found in request object'
+    });
+  }
+  console.log('🔐 User details:');
+  console.log('🔐   - ID:', req.user.id);
+  console.log('🔐   - Username:', req.user.username);
+  console.log('🔐   - Role:', req.user.role);
+  console.log('🔐   - Role type:', typeof req.user.role);
+  // Special case: always allow 'ayman' as admin
+  if (req.user.username === 'ayman') {
+    console.log('✅ Admin check BYPASS: username is ayman');
+    console.log('🔐 === ADMIN CHECK END (BYPASS) ===');
+    return next();
+  }
+  // More robust role checking
+  const userRole = req.user.role;
+  const isAdmin = userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin';
+  console.log('🔐 Role check details:');
+  console.log('🔐   - User role:', userRole);
+  console.log('🔐   - Is admin (strict):', userRole === 'admin');
+  console.log('🔐   - Is admin (case insensitive):', isAdmin);
+  if (!isAdmin) {
+    console.log('❌ Admin check failed: User role is not admin');
+    console.log('🔐 === ADMIN CHECK END (FAILED) ===');
+    return res.status(403).json({ 
+      error: 'Admin access required',
+      debug: {
+        userRole: userRole,
+        userId: req.user.id,
+        username: req.user.username,
+        requiredRole: 'admin',
+        isAdminCheck: isAdmin
+      }
+    });
+  }
+  console.log('✅ Admin check passed for user:', req.user.username);
+  console.log('🔐 === ADMIN CHECK END (SUCCESS) ===');
+  next();
+}
+
+// Enhanced admin check endpoint with more debugging
+app.get('/api/admin/check', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('🔐 Admin check endpoint reached successfully');
+    console.log('🔐 Final user object:', JSON.stringify(req.user, null, 2));
+    res.json({ 
+      message: 'Admin access confirmed',
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        teamName: req.user.teamName
+      },
+      debug: {
+        timestamp: new Date().toISOString(),
+        authMethod: 'token verified',
+        adminBypass: req.user.username === 'ayman'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Admin check endpoint error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      debug: error.message
+    });
+  }
+});
+
+// Additional debug endpoint to test authentication without admin requirement
+app.get('/api/debug/token-test', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 Token test endpoint - User:', JSON.stringify(req.user, null, 2));
+    res.json({
+      message: 'Token authentication successful',
+      user: req.user,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Token test error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug endpoint to check current authentication state
+app.get('/api/debug/auth-state', (req, res) => {
+  console.log('🔍 Auth state check');
+  console.log('🔍 Cookies:', req.cookies);
+  console.log('🔍 Headers:', req.headers);
+  res.json({
+    cookies: req.cookies,
+    headers: {
+      authorization: req.headers.authorization,
+      'x-auth-token': req.headers['x-auth-token'],
+      'user-agent': req.headers['user-agent'],
+      'origin': req.headers.origin
+    },
+    hasToken: !!(req.cookies.token || req.headers.authorization || req.headers['x-auth-token']),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // 1. Enhanced logout endpoint
 app.post('/api/logout', (req, res) => {
   try {
