@@ -1287,6 +1287,36 @@ app.delete('/api/admin/notifications/cleanup', authenticateToken, requireAdmin, 
   }
 });
 
+// Admin: Get all teams with their cards for admin dashboard
+app.get('/api/admin/teams-cards', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const users = await getAllUsers();
+    const teamsWithCards = [];
+    
+    // Filter only user role (teams) and get their inventory
+    for (const user of users) {
+      if (user.role === 'user') {
+        const inventory = await getUserInventory(user.id || user._id);
+        teamsWithCards.push({
+          id: user.id || user._id,
+          teamName: user.teamName,
+          score: user.score,
+          coins: user.coins,
+          cards: inventory || []
+        });
+      }
+    }
+    
+    // Sort by score (highest first)
+    teamsWithCards.sort((a, b) => b.score - a.score);
+    
+    res.json(teamsWithCards);
+  } catch (error) {
+    console.error('Get teams with cards error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Debug route to print all users
 app.get('/api/debug/users', async (req, res) => {
   try {
@@ -1608,4 +1638,3 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🔗 CORS Origin: * (Public Access)`);
 
 });
-
