@@ -891,18 +891,23 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     await addToUserInventory(req.user.id, cardToAdd);
 
-    // Create notification for the spin
-    const notification = {
-      id: Date.now().toString(),
-      userId: req.user.id,
-      type: 'spin',
-      message: `You spun and got: ${randomCard.name} - ${randomCard.effect}`,
-      timestamp: new Date().toISOString(),
-      read: false
-    };
+    // Delay notification to appear after congratulations message
+    setTimeout(() => {
+      const notification = {
+        id: Date.now().toString(),
+        userId: req.user.id,
+        type: 'spin',
+        message: `You spun and got: ${randomCard.name} - ${randomCard.effect}`,
+        timestamp: new Date().toISOString(),
+        read: false
+      };
 
-    await addNotification(notification);
-    io.to(req.user.id).emit('notification', notification);
+      addNotification(notification).then(() => {
+        io.to(req.user.id).emit('notification', notification);
+      }).catch(error => {
+        console.error('Error adding delayed notification:', error);
+      });
+    }, 3500); // 3.5 seconds delay (after 3-second spin animation)
 
     // Emit user update for real-time updates
     io.emit('user-update', {
