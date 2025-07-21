@@ -1040,7 +1040,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     await addToUserInventory(req.user.id, cardToAdd);
 
-    // Delay notification to appear after congratulations message
+    // Delay notification to appear after congratulations message (user only)
     setTimeout(() => {
       const notification = {
         id: Date.now().toString(),
@@ -1050,7 +1050,6 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         timestamp: new Date().toISOString(),
         read: false
       };
-
       addNotification(notification).then(() => {
         io.to(req.user.id).emit('notification', notification);
       }).catch(error => {
@@ -1072,10 +1071,10 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
 
-    // Admin notification for spin
+    // Admin notification for spin (summary only, not type 'spin')
     const adminSpinNotification = {
       id: Date.now().toString(),
-      type: 'spin',
+      type: 'admin-spin',
       teamId: user.id || user._id,
       teamName: user.teamName,
       message: `${user.teamName} spun the wheel and got: ${randomCard.name}`,
