@@ -1042,7 +1042,17 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     await addToUserInventory(req.user.id, cardToAdd);
 
-    // No user notification for spin; only admin notification below
+    // User notification for spin
+    const userSpinNotification = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'spin',
+      message: `You spun and received: ${randomCard.name} (${randomCard.type})`,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+    await addNotification(userSpinNotification);
+    io.to(req.user.id).emit('notification', userSpinNotification);
 
     // Emit user update for real-time updates
     io.emit('user-update', {
@@ -1058,7 +1068,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
 
-    // Admin notification for spin (summary only, not type 'spin')
+    // Only send summary admin notification for spin
     const adminSpinNotification = {
       id: Date.now().toString(),
       type: 'admin-spin',
