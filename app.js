@@ -146,7 +146,28 @@ let countries = [
   { id: '7', name: 'Ethiopia', cost: 90, owner: null, score: 90 },
   { id: '8', name: 'Kenya', cost: 80, owner: null, score: 80 },
   { id: '9', name: 'Nigeria', cost: 70, owner: null, score: 70 },
-  { id: '10', name: 'Ghana', cost: 60, owner: null, score: 60 }
+  { id: '10', name: 'Ghana', cost: 60, owner: null, score: 60 },
+  // Added more countries
+  { id: '11', name: 'South Africa', cost: 210, owner: null, score: 160 },
+  { id: '12', name: 'Senegal', cost: 75, owner: null, score: 65 },
+  { id: '13', name: 'Ivory Coast', cost: 85, owner: null, score: 75 },
+  { id: '14', name: 'Cameroon', cost: 95, owner: null, score: 85 },
+  { id: '15', name: 'Uganda', cost: 70, owner: null, score: 60 },
+  { id: '16', name: 'Saudi Arabia', cost: 220, owner: null, score: 170 },
+  { id: '17', name: 'United Arab Emirates', cost: 200, owner: null, score: 160 },
+  { id: '18', name: 'Qatar', cost: 180, owner: null, score: 150 },
+  { id: '19', name: 'Jordan', cost: 110, owner: null, score: 90 },
+  { id: '20', name: 'Lebanon', cost: 100, owner: null, score: 80 },
+  { id: '21', name: 'Turkey', cost: 230, owner: null, score: 180 },
+  { id: '22', name: 'Greece', cost: 150, owner: null, score: 120 },
+  { id: '23', name: 'Italy', cost: 250, owner: null, score: 200 },
+  { id: '24', name: 'France', cost: 270, owner: null, score: 220 },
+  { id: '25', name: 'Spain', cost: 260, owner: null, score: 210 },
+  { id: '26', name: 'Germany', cost: 280, owner: null, score: 230 },
+  { id: '27', name: 'United Kingdom', cost: 290, owner: null, score: 240 },
+  { id: '28', name: 'Portugal', cost: 140, owner: null, score: 110 },
+  { id: '29', name: 'Netherlands', cost: 200, owner: null, score: 160 },
+  { id: '30', name: 'Belgium', cost: 190, owner: null, score: 150 }
 ];
 
 let userInventories = {};
