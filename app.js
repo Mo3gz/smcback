@@ -971,6 +971,22 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
     await addNotification(notification);
     io.emit('admin-notification', notification);
 
+    // Create notification for the user
+    let userMessage = `You used: ${card.name}`;
+    if (targetTeamName && targetTeamName !== 'Unknown Team') {
+      userMessage += ` | Target: ${targetTeamName}`;
+    }
+    const userNotification = {
+      id: (Date.now() + 1).toString(),
+      userId: req.user.id,
+      type: 'card-used',
+      message: userMessage,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+    await addNotification(userNotification);
+    io.to(req.user.id).emit('notification', userNotification);
+
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
     // Notify all admins (and listeners) that any inventory has changed
@@ -1026,22 +1042,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     await addToUserInventory(req.user.id, cardToAdd);
 
-    // Delay notification to appear after congratulations message (user only)
-    setTimeout(() => {
-      const notification = {
-        id: Date.now().toString(),
-        userId: req.user.id,
-        type: 'spin',
-        message: `You spun and got: ${randomCard.name} - ${randomCard.effect}`,
-        timestamp: new Date().toISOString(),
-        read: false
-      };
-      addNotification(notification).then(() => {
-        io.to(req.user.id).emit('notification', notification);
-      }).catch(error => {
-        console.error('Error adding delayed notification:', error);
-      });
-    }, 3500); // 3.5 seconds delay (after 3-second spin animation)
+    // No user notification for spin; only admin notification below
 
     // Emit user update for real-time updates
     io.emit('user-update', {
@@ -1097,7 +1098,10 @@ app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req,
 app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { code, teamId, discount } = req.body;
-    
+    // Validate discount: must be integer between 1 and 100
+    if (!Number.isInteger(discount) || discount < 1 || discount > 100) {
+      return res.status(400).json({ error: 'Discount must be an integer between 1 and 100.' });
+    }
     const promoCode = {
       id: Date.now().toString(),
       code,
