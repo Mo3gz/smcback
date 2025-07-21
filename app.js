@@ -864,6 +864,13 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       coins: newCoins, 
       score: newScore 
     });
+    // Emit user-update for this user
+    io.to(userId).emit('user-update', {
+      id: userId,
+      teamName: user.teamName,
+      coins: newCoins,
+      score: newScore
+    });
 
     // Update country
     await updateCountryById(countryId, { owner: userId });
@@ -1013,6 +1020,13 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     const newCoins = user.coins - cost;
     await updateUserById(req.user.id, { coins: newCoins });
+    // Emit user-update for this user
+    io.to(user.id || user._id).emit('user-update', {
+      id: user.id || user._id,
+      teamName: user.teamName,
+      coins: newCoins,
+      score: user.score
+    });
 
     // Generate random card based on spin type
     const cards = getCardsByType(spinType);
@@ -1181,6 +1195,13 @@ app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) =
 
     const newCoins = user.coins + amount;
     await updateUserById(teamId, { coins: newCoins });
+    // Emit user-update for this user
+    io.to(teamId).emit('user-update', {
+      id: teamId,
+      teamName: user.teamName,
+      coins: newCoins,
+      score: user.score
+    });
 
     // Notify the team
     const notification = {
@@ -1222,6 +1243,13 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
 
     const newScore = user.score + amount;
     await updateUserById(teamId, { score: newScore });
+    // Emit user-update for this user
+    io.to(teamId).emit('user-update', {
+      id: teamId,
+      teamName: user.teamName,
+      coins: user.coins,
+      score: newScore
+    });
 
     // Notify the team
     const notification = {
