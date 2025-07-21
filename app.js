@@ -955,7 +955,7 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       targetTeamName = targetTeam ? targetTeam.teamName : 'Unknown Team';
     }
 
-    // Create notification for admin
+    // Create notification for admin only
     const notification = {
       id: Date.now().toString(),
       type: 'card-used',
@@ -968,22 +968,8 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       timestamp: new Date().toISOString(),
       read: false
     };
-
     await addNotification(notification);
     io.emit('admin-notification', notification);
-
-    // Create notification for the user
-    const userNotification = {
-      id: (Date.now() + 1).toString(),
-      userId: req.user.id,
-      type: 'card-used',
-      message: `You used: ${card.name} - ${card.effect}`,
-      timestamp: new Date().toISOString(),
-      read: false
-    };
-
-    await addNotification(userNotification);
-    io.to(req.user.id).emit('notification', userNotification);
 
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
