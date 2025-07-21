@@ -1063,11 +1063,13 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
     if (user) {
       const notification = {
         id: Date.now().toString(),
+        userId: teamId,
         type: 'promo-code',
         message: `You received a promo code: ${code} with ${discount}% discount!`,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        read: false
       };
-      
+      await addNotification(notification); // <-- Save in DB
       io.to(teamId).emit('notification', notification);
     }
     
@@ -1639,4 +1641,23 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS Origin: * (Public Access)`);
 
+});
+
+// Validate promo code for preview (does not mark as used)
+app.post('/api/promocode/validate', authenticateToken, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ valid: false, error: 'Promo code is required' });
+    }
+    const promo = await findPromoCode(code, req.user.id);
+    if (promo) {
+      return res.json({ valid: true, discount: promo.discount });
+    } else {
+      return res.json({ valid: false, discount: 0 });
+    }
+  } catch (error) {
+    console.error('Promo code validation error:', error);
+    res.status(500).json({ valid: false, error: 'Internal server error' });
+  }
 });
