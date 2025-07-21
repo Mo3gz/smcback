@@ -888,6 +888,22 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
     io.emit('scoreboard-update', updatedUsers);
     io.emit('countries-update', updatedCountries);
 
+    // Admin notification for country purchase
+    const adminCountryNotification = {
+      id: Date.now().toString(),
+      type: 'country-bought',
+      teamId: userId,
+      teamName: user.teamName,
+      message: `${user.teamName} bought ${country.name} for ${country.cost} coins`,
+      countryName: country.name,
+      countryId: country.id,
+      cost: country.cost,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+    await addNotification(adminCountryNotification);
+    io.emit('admin-notification', adminCountryNotification);
+
     res.json({ 
       message: `Successfully bought ${country.name}`,
       user: {
@@ -1041,6 +1057,21 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
+
+    // Admin notification for spin
+    const adminSpinNotification = {
+      id: Date.now().toString(),
+      type: 'spin',
+      teamId: user.id || user._id,
+      teamName: user.teamName,
+      message: `${user.teamName} spun the wheel and got: ${randomCard.name}`,
+      cardName: randomCard.name,
+      cardType: randomCard.type,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+    await addNotification(adminSpinNotification);
+    io.emit('admin-notification', adminSpinNotification);
 
     res.json({ 
       card: randomCard,
