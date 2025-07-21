@@ -1068,13 +1068,13 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     // Notify user that inventory has been updated
     io.to(req.user.id).emit('inventory-update');
 
-    // Only send summary admin notification for spin
+    // Send admin notification for spin with team name and card
     const adminSpinNotification = {
       id: Date.now().toString(),
-      type: 'admin-spin',
+      type: 'spin',
       teamId: user.id || user._id,
       teamName: user.teamName,
-      message: `${user.teamName} spun the wheel and got: ${randomCard.name}`,
+      message: `${user.teamName} spun the wheel and got: ${randomCard.name} (${randomCard.type})`,
       cardName: randomCard.name,
       cardType: randomCard.type,
       timestamp: new Date().toISOString(),
