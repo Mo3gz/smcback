@@ -1042,7 +1042,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     await addToUserInventory(req.user.id, cardToAdd);
 
-    // User notification for spin
+    // User notification for spin (send only to user, not admin)
     const userSpinNotification = {
       id: Date.now().toString(),
       userId: req.user.id,
