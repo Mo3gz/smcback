@@ -1118,6 +1118,16 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
     if (!Number.isInteger(discount) || discount < 1 || discount > 100) {
       return res.status(400).json({ error: 'Discount must be an integer between 1 and 100.' });
     }
+    // Prevent duplicate promocode for the same team
+    let existingPromo = null;
+    if (mongoConnected && db) {
+      existingPromo = await db.collection('promoCodes').findOne({ code, teamId });
+    } else {
+      existingPromo = promoCodes.find(p => p.code === code && p.teamId === teamId);
+    }
+    if (existingPromo) {
+      return res.status(400).json({ error: 'This promocode already exists for the selected team.' });
+    }
     const promoCode = {
       id: Date.now().toString(),
       code,
