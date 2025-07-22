@@ -1016,7 +1016,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       const promo = await findPromoCode(promoCode, req.user.id);
       if (promo) {
         cost = Math.floor(cost * (1 - promo.discount / 100));
-        await markPromoCodeAsUsed(promoCode, req.user.id);
+        await markPromoCodeAsUsed(promoCode, req.user.id); // Mark as used after applying
       }
     }
 
