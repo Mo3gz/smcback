@@ -882,7 +882,8 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       type: 'country-purchased',
       message: `You purchased ${country.name} for ${country.cost} coins!`,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      recipientType: 'user'
     };
 
     await addNotification(notification);
@@ -906,7 +907,8 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       countryId: country.id,
       cost: country.cost,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      recipientType: 'admin'
     };
     await addNotification(adminCountryNotification);
     io.emit('admin-notification', adminCountryNotification);
@@ -966,7 +968,8 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       selectedTeam: targetTeamName, // Store team name instead of ID
       description,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      recipientType: 'admin'
     };
     await addNotification(notification);
     io.emit('admin-notification', notification);
@@ -982,7 +985,8 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       type: 'card-used',
       message: userMessage,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      recipientType: 'user'
     };
     await addNotification(userNotification);
     io.to(req.user.id).emit('notification', userNotification);
@@ -1049,7 +1053,8 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       type: 'spin',
       message: `You spun and received: ${randomCard.name} (${randomCard.type})`,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      recipientType: 'user'
     };
     await addNotification(userSpinNotification);
     io.to(req.user.id).emit('notification', userSpinNotification);
@@ -1078,7 +1083,8 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       cardName: randomCard.name,
       cardType: randomCard.type,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      recipientType: 'admin'
     };
     await addNotification(adminSpinNotification);
     io.emit('admin-notification', adminSpinNotification);
@@ -1132,7 +1138,8 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
         type: 'promo-code',
         message: `You received a promo code: ${code} with ${discount}% discount!`,
         timestamp: new Date().toISOString(),
-        read: false
+        read: false,
+        recipientType: 'user'
       };
       await addNotification(notification); // <-- Save in DB
       io.to(teamId).emit('notification', notification);
@@ -1168,7 +1175,8 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
       id: Date.now().toString(),
       type: 'card-received',
       message: `You received a new card: ${cardName}`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      recipientType: 'user'
     };
 
     io.to(teamId).emit('notification', notification);
@@ -1209,7 +1217,8 @@ app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) =
       type: 'coins-updated',
       message: `${amount > 0 ? '+' : ''}${amount} coins: ${reason}`,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      recipientType: 'user'
     };
 
     await addNotification(notification);
@@ -1257,7 +1266,8 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
       type: 'score-updated',
       message: `${amount > 0 ? '+' : ''}${amount} points: ${reason}`,
       timestamp: new Date().toISOString(),
-      read: false
+      read: false,
+      recipientType: 'user'
     };
 
     await addNotification(notification);
@@ -1461,7 +1471,8 @@ app.post('/api/debug/create-test-notifications', authenticateToken, async (req, 
         type: 'spin',
         message: 'You spun and got: Hidden Treasure - +400 Points instantly',
         timestamp: new Date().toISOString(),
-        read: false
+        read: false,
+        recipientType: 'user'
       },
       {
         id: (Date.now() + 1).toString(),
@@ -1469,7 +1480,8 @@ app.post('/api/debug/create-test-notifications', authenticateToken, async (req, 
         type: 'coins-updated',
         message: '+100 coins: Admin bonus',
         timestamp: new Date(Date.now() - 60000).toISOString(), // 1 minute ago
-        read: false
+        read: false,
+        recipientType: 'user'
       },
       {
         id: (Date.now() + 2).toString(),
@@ -1477,7 +1489,8 @@ app.post('/api/debug/create-test-notifications', authenticateToken, async (req, 
         type: 'score-updated',
         message: '+50 points: Challenge completed',
         timestamp: new Date(Date.now() - 120000).toISOString(), // 2 minutes ago
-        read: true
+        read: true,
+        recipientType: 'user'
       },
       {
         id: (Date.now() + 3).toString(),
@@ -1485,7 +1498,8 @@ app.post('/api/debug/create-test-notifications', authenticateToken, async (req, 
         type: 'country-purchased',
         message: 'You purchased: Egypt for 200 coins',
         timestamp: new Date(Date.now() - 180000).toISOString(), // 3 minutes ago
-        read: false
+        read: false,
+        recipientType: 'user'
       },
       {
         id: (Date.now() + 4).toString(),
@@ -1493,7 +1507,8 @@ app.post('/api/debug/create-test-notifications', authenticateToken, async (req, 
         type: 'global',
         message: 'Welcome to the Scout Game! Good luck!',
         timestamp: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
-        read: true
+        read: true,
+        recipientType: 'global'
       }
     ];
     
