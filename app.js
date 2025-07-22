@@ -1224,7 +1224,7 @@ app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) =
       id: Date.now().toString(),
       userId: teamId,
       type: 'coins-updated',
-      message: `${amount > 0 ? '+' : ''}${amount} coins: ${reason}`,
+      message: `Your coins were ${amount > 0 ? 'increased' : 'decreased'} by ${Math.abs(amount)}. Reason: ${reason}`,
       timestamp: new Date().toISOString(),
       read: false,
       recipientType: 'user'
@@ -1273,7 +1273,7 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
       id: Date.now().toString(),
       userId: teamId,
       type: 'score-updated',
-      message: `${amount > 0 ? '+' : ''}${amount} points: ${reason}`,
+      message: `Your score was ${amount > 0 ? 'increased' : 'decreased'} by ${Math.abs(amount)}. Reason: ${reason}`,
       timestamp: new Date().toISOString(),
       read: false,
       recipientType: 'user'
