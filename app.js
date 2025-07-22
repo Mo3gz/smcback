@@ -147,7 +147,6 @@ let countries = [
   { id: '8', name: 'Kenya', cost: 80, owner: null, score: 80 },
   { id: '9', name: 'Nigeria', cost: 70, owner: null, score: 70 },
   { id: '10', name: 'Ghana', cost: 60, owner: null, score: 60 },
-  // Added more countries
   { id: '11', name: 'South Africa', cost: 210, owner: null, score: 160 },
   { id: '12', name: 'Senegal', cost: 75, owner: null, score: 65 },
   { id: '13', name: 'Ivory Coast', cost: 85, owner: null, score: 75 },
@@ -1674,29 +1673,21 @@ setInterval(async () => {
 function getCardsByType(spinType) {
   const cards = {
     luck: [
-      { name: 'Hidden Treasure', type: 'luck', effect: '+400 Points instantly' },
-      { name: 'Camp Tax', type: 'luck', effect: '-300 Points go to the Bank' },
-      { name: 'Golden Ticket', type: 'luck', effect: 'Pay 200 Points → If you win the next challenge, take +500 Points!' },
-      { name: 'Mysterious Trader', type: 'luck', effect: 'Pay 150 Points → Get a random Attack Card' },
-      { name: 'Everything Against Me', type: 'luck', effect: 'Instantly lose 250 Points' },
-      { name: 'Double Up', type: 'luck', effect: 'Double your current points if you win any challenge in the next 30 minutes' },
-      { name: 'Shady Deal', type: 'luck', effect: 'Steal 100 Points from any tent' }
+      { name: "i`amphoteric", type: 'luck', effect: '+400 Coins instantly' },
+      { name: "Everything Against Me", type: 'luck', effect: 'Instantly lose 250 Coins' },
+      { name: 'el 7aramy', type: 'luck', effect: 'Btsr2 100 coin men ay khema, w law et3raft birg3o el double' }
     ],
     attack: [
-      { name: 'Raid', type: 'attack', effect: 'Choose one team to raid. If you win the challenge, steal 300 Points from them.' },
-      { name: 'Control Battle', type: 'attack', effect: 'Select one team to challenge in a one-on-one tent battle. Winner gets +500 Points.' },
-      { name: 'Double Strike', type: 'attack', effect: 'Select one team to ally with and attack another tent together.' },
-      { name: 'Break Alliances', type: 'attack', effect: 'Force 2 allied tents to break their alliance' },
-      { name: 'Broad Day Robbery', type: 'attack', effect: 'Take 100 Points instantly from any tent' }
+      { name: 'wesh l wesh', type: 'attack', effect: '1v1 battle' },
+      { name: 'ana el 7aramy', type: 'attack', effect: 'Btakhod 100 coin men ay khema mnghir ay challenge' },
+      { name: 'ana w bas', type: 'attack', effect: 'Bt3mel risk 3ala haga' }
     ],
     alliance: [
-      { name: 'Strategic Alliance', type: 'alliance', effect: 'Select one team to form an alliance with for 1 full day.' },
-      { name: 'Betrayal Alliance', type: 'alliance', effect: 'Form an alliance, then betray them at the end to steal their points.' },
-      { name: 'Golden Partnership', type: 'alliance', effect: 'Choose a team to team up with in the next challenge.' },
-      { name: 'Temporary Truce', type: 'alliance', effect: 'Select 2 teams to pause all attacks between them for 1 full day.' },
-      { name: 'Hidden Leader', type: 'alliance', effect: 'You become the challenge leader. Ally with another team.' }
+      { name: 'el nadala', type: 'alliance', effect: 'Bt3mel t7alof w tlghih f ay wa2t w takhod el coins 3ady' },
+      { name: 'el sohab', type: 'alliance', effect: 'Bt3mel t7alof 3ady' },
+      { name: 'el melok', type: 'alliance', effect: 'Btst5dm el khema el taniaa y3melo el challenges makanak' }
     ]
-  };
+  };  
 
   if (spinType === 'random') {
     const allCards = [...cards.luck, ...cards.attack, ...cards.alliance];
