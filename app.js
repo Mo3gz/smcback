@@ -1187,6 +1187,7 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
       recipientType: 'user'
     };
 
+    // Ensure the user is in their socket room before emitting
     io.to(teamId).emit('notification', notification);
     await addNotification(notification);
     // Notify user that inventory has been updated
