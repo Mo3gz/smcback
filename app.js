@@ -1181,6 +1181,7 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
     // Notify the team with card name and effect
     const notification = {
       id: Date.now().toString(),
+      userId: teamId,
       type: 'card-received',
       message: `You received a new card: ${cardName}${effect ? ' - ' + effect : ''}`,
       timestamp: new Date().toISOString(),
