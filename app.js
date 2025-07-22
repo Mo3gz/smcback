@@ -1191,6 +1191,7 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
 app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { teamId, cardName, cardType } = req.body;
+    const adminUser = await findUserById(req.user.id);
     const user = await findUserById(teamId);
     
     if (!user) {
@@ -1209,28 +1210,70 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
     // Find the effect for the card
     let effect = '';
     try {
-      const cardsList = getCardsByType(cardType === 'random' ? 'luck' : cardType); // fallback to luck for random
+      const cardsList = getCardsByType(cardType === 'random' ? 'luck' : cardType);
       const found = cardsList.find(c => c.name === cardName);
       if (found) effect = found.effect;
-    } catch (e) {}
+    } catch (e) {
+      console.error('Error finding card effect:', e);
+    }
+
+    // Format card type for display (capitalize first letter)
+    const displayCardType = cardType.charAt(0).toUpperCase() + cardType.slice(1);
 
     // Notify the team with card name and effect
-    const notification = {
+    const teamNotification = {
       id: Date.now().toString(),
       userId: teamId,
       type: 'card-received',
-      message: `You received a new card: ${cardName}${effect ? ' - ' + effect : ''}`,
+      message: `You received a new ${displayCardType} card: ${cardName}${effect ? ' - ' + effect : ''}`,
       timestamp: new Date().toISOString(),
-      recipientType: 'user'
+      read: false,
+      recipientType: 'user',
+      metadata: {
+        cardName,
+        cardType,
+        effect
+      }
     };
 
-    // Ensure the user is in their socket room before emitting
-    io.to(teamId).emit('notification', notification);
-    await addNotification(notification);
+    // Send notification to the team
+    io.to(teamId).emit('notification', teamNotification);
+    await addNotification(teamNotification);
+    
+    // Create admin action notification
+    const adminAction = {
+      id: (Date.now() + 1).toString(),
+      userId: req.user.id, // Admin's user ID
+      type: 'admin-action',
+      actionType: 'card-assigned',
+      message: `Admin ${adminUser.teamName} assigned ${displayCardType} card "${cardName}" to team ${user.teamName}.`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        targetTeamId: teamId,
+        targetTeamName: user.teamName,
+        cardName: cardName,
+        cardType: cardType,
+        effect: effect || 'No effect description available'
+      }
+    };
+
+    // Save and emit admin action notification
+    await addNotification(adminAction);
+    io.emit('admin-notification', adminAction);
+    
     // Notify user that inventory has been updated
     io.to(teamId).emit('inventory-update');
+    
+    // Update scoreboard to reflect any changes
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
 
-    res.json(card);
+    res.json({
+      ...card,
+      effect: effect || null
+    });
   } catch (error) {
     console.error('Give card error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1240,6 +1283,7 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
 app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { teamId, amount, reason } = req.body;
+    const adminUser = await findUserById(req.user.id);
     const user = await findUserById(teamId);
     
     if (!user) {
@@ -1248,6 +1292,7 @@ app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) =
 
     const newCoins = user.coins + amount;
     await updateUserById(teamId, { coins: newCoins });
+    
     // Emit user-update for this user
     io.to(teamId).emit('user-update', {
       id: teamId,
@@ -1257,18 +1302,44 @@ app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) =
     });
 
     // Notify the team
-    const notification = {
+    const teamNotification = {
       id: Date.now().toString(),
       userId: teamId,
       type: 'coins-updated',
       message: `Your coins were ${amount > 0 ? 'increased' : 'decreased'} by ${Math.abs(amount)}. Reason: ${reason}`,
       timestamp: new Date().toISOString(),
       read: false,
-      recipientType: 'user'
+      recipientType: 'user',
+      metadata: {
+        amount: amount,
+        reason: reason
+      }
     };
 
-    await addNotification(notification);
-    io.to(teamId).emit('notification', notification);
+    await addNotification(teamNotification);
+    io.to(teamId).emit('notification', teamNotification);
+    
+    // Create admin action notification
+    const adminAction = {
+      id: (Date.now() + 1).toString(),
+      userId: req.user.id, // Admin's user ID
+      type: 'admin-action',
+      actionType: 'coins-updated',
+      message: `Admin ${adminUser.teamName} ${amount > 0 ? 'added' : 'subtracted'} ${Math.abs(amount)} coins to team ${user.teamName}. Reason: ${reason}`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        targetTeamId: teamId,
+        targetTeamName: user.teamName,
+        amount: amount,
+        reason: reason
+      }
+    };
+
+    await addNotification(adminAction);
+    // Emit to all admin clients
+    io.emit('admin-notification', adminAction);
     
     const updatedUsers = await getAllUsers();
     io.emit('scoreboard-update', updatedUsers);
