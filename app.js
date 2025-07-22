@@ -957,9 +957,18 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
     }
 
     // Create notification for admin only
+    let adminMessage = `Team ${user.teamName} used: ${card.name}`;
+    if (targetTeamName && targetTeamName !== 'Unknown Team') {
+      adminMessage += ` | Target: ${targetTeamName}`;
+    }
+    if (description) {
+      adminMessage += ` | Note: ${description}`;
+    }
+    
     const notification = {
       id: Date.now().toString(),
       type: 'card-used',
+      message: adminMessage,
       teamId: req.user.id,
       teamName: user.teamName,
       cardName: card.name,
