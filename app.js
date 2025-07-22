@@ -1161,35 +1161,6 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
       return res.status(404).json({ error: 'Team not found' });
     }
 
-    // Find the card effect from the card list
-    const cards = {
-      luck: [
-        { name: 'Hidden Treasure', type: 'luck', effect: '+400 Points instantly' },
-        { name: 'Camp Tax', type: 'luck', effect: '-300 Points go to the Bank' },
-        { name: 'Golden Ticket', type: 'luck', effect: 'Pay 200 Points → If you win the next challenge, take +500 Points!' },
-        { name: 'Mysterious Trader', type: 'luck', effect: 'Pay 150 Points → Get a random Attack Card' },
-        { name: 'Everything Against Me', type: 'luck', effect: 'Instantly lose 250 Points' },
-        { name: 'Double Up', type: 'luck', effect: 'Double your current points if you win any challenge in the next 30 minutes' },
-        { name: 'Shady Deal', type: 'luck', effect: 'Steal 100 Points from any tent' }
-      ],
-      attack: [
-        { name: 'Raid', type: 'attack', effect: 'Choose one team to raid. If you win the challenge, steal 300 Points from them.' },
-        { name: 'Control Battle', type: 'attack', effect: 'Select one team to challenge in a one-on-one tent battle. Winner gets +500 Points.' },
-        { name: 'Double Strike', type: 'attack', effect: 'Select one team to ally with and attack another tent together.' },
-        { name: 'Break Alliances', type: 'attack', effect: 'Force 2 allied tents to break their alliance' },
-        { name: 'Broad Day Robbery', type: 'attack', effect: 'Take 100 Points instantly from any tent' }
-      ],
-      alliance: [
-        { name: 'Strategic Alliance', type: 'alliance', effect: 'Select one team to form an alliance with for 1 full day.' },
-        { name: 'Betrayal Alliance', type: 'alliance', effect: 'Form an alliance, then betray them at the end to steal their points.' },
-        { name: 'Golden Partnership', type: 'alliance', effect: 'Choose a team to team up with in the next challenge.' },
-        { name: 'Temporary Truce', type: 'alliance', effect: 'Select 2 teams to pause all attacks between them for 1 full day.' },
-        { name: 'Hidden Leader', type: 'alliance', effect: 'You become the challenge leader. Ally with another team.' }
-      ]
-    };
-    const cardObj = (cards[cardType] || []).find(card => card.name === cardName);
-    const cardEffect = cardObj ? cardObj.effect : '';
-
     const card = {
       id: Date.now().toString(),
       name: cardName,
@@ -1199,16 +1170,25 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
 
     await addToUserInventory(teamId, card);
 
-    // Notify the team (user) with card name and effect
+    // Find the effect for the card
+    let effect = '';
+    try {
+      const cardsList = getCardsByType(cardType === 'random' ? 'luck' : cardType); // fallback to luck for random
+      const found = cardsList.find(c => c.name === cardName);
+      if (found) effect = found.effect;
+    } catch (e) {}
+
+    // Notify the team with card name and effect
     const notification = {
       id: Date.now().toString(),
       type: 'card-received',
-      message: `You received a new card: ${cardName}${cardEffect ? ' - ' + cardEffect : ''}`,
+      message: `You received a new card: ${cardName}${effect ? ' - ' + effect : ''}`,
       timestamp: new Date().toISOString(),
       recipientType: 'user'
     };
-    await addNotification(notification);
+
     io.to(teamId).emit('notification', notification);
+    await addNotification(notification);
     // Notify user that inventory has been updated
     io.to(teamId).emit('inventory-update');
 
