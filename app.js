@@ -1113,10 +1113,13 @@ app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req,
 app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { code, teamId, discount } = req.body;
+    const adminUser = await findUserById(req.user.id);
+    
     // Validate discount: must be integer between 1 and 100
     if (!Number.isInteger(discount) || discount < 1 || discount > 100) {
       return res.status(400).json({ error: 'Discount must be an integer between 1 and 100.' });
     }
+    
     // Prevent duplicate promocode for the same team
     let existingPromo = null;
     if (mongoConnected && db) {
@@ -1127,13 +1130,15 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
     if (existingPromo) {
       return res.status(400).json({ error: 'This promocode already exists for the selected team.' });
     }
+    
     const promoCode = {
       id: Date.now().toString(),
       code,
       teamId,
       discount,
       used: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.id // Track which admin created this promo code
     };
     
     await addPromoCode(promoCode);
@@ -1141,7 +1146,7 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
     // Notify the specific team
     const user = await findUserById(teamId);
     if (user) {
-      const notification = {
+      const teamNotification = {
         id: Date.now().toString(),
         userId: teamId,
         type: 'promo-code',
@@ -1150,8 +1155,30 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
         read: false,
         recipientType: 'user'
       };
-      await addNotification(notification); // <-- Save in DB
-      io.to(teamId).emit('notification', notification);
+      await addNotification(teamNotification);
+      io.to(teamId).emit('notification', teamNotification);
+      
+      // Create admin action notification
+      const adminAction = {
+        id: (Date.now() + 1).toString(),
+        userId: req.user.id, // Admin's user ID
+        type: 'admin-action',
+        actionType: 'promo-code-created',
+        message: `Admin ${adminUser.teamName} created a promo code (${code}) with ${discount}% discount for team ${user.teamName}.`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'admin',
+        metadata: {
+          targetTeamId: teamId,
+          targetTeamName: user.teamName,
+          promoCode: code,
+          discount: discount
+        }
+      };
+      
+      await addNotification(adminAction);
+      // Emit to all admin clients
+      io.emit('admin-notification', adminAction);
     }
     
     res.json(promoCode);
@@ -1262,6 +1289,7 @@ app.post('/api/admin/coins', authenticateToken, requireAdmin, async (req, res) =
 app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { teamId, amount, reason } = req.body;
+    const adminUser = await findUserById(req.user.id);
     const user = await findUserById(teamId);
     
     if (!user) {
@@ -1270,6 +1298,7 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
 
     const newScore = user.score + amount;
     await updateUserById(teamId, { score: newScore });
+    
     // Emit user-update for this user
     io.to(teamId).emit('user-update', {
       id: teamId,
@@ -1279,7 +1308,7 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
     });
 
     // Notify the team
-    const notification = {
+    const teamNotification = {
       id: Date.now().toString(),
       userId: teamId,
       type: 'score-updated',
@@ -1289,8 +1318,30 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
       recipientType: 'user'
     };
 
-    await addNotification(notification);
-    io.to(teamId).emit('notification', notification);
+    await addNotification(teamNotification);
+    io.to(teamId).emit('notification', teamNotification);
+    
+    // Create admin action notification
+    const adminAction = {
+      id: (Date.now() + 1).toString(),
+      userId: req.user.id, // Admin's user ID
+      type: 'admin-action',
+      actionType: 'score-update',
+      message: `Admin ${adminUser.teamName} ${amount > 0 ? 'added' : 'subtracted'} ${Math.abs(amount)} points to team ${user.teamName}. Reason: ${reason}`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        targetTeamId: teamId,
+        targetTeamName: user.teamName,
+        amount: amount,
+        reason: reason
+      }
+    };
+
+    await addNotification(adminAction);
+    // Emit to all admin clients
+    io.emit('admin-notification', adminAction);
     
     const updatedUsers = await getAllUsers();
     io.emit('scoreboard-update', updatedUsers);
