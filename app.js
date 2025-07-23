@@ -1045,7 +1045,99 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     // Generate random card based on spin type
     const cards = getCardsByType(spinType);
     const randomCard = cards[Math.floor(Math.random() * cards.length)];
-    
+
+    // Special instant-action cards: do NOT add to inventory, just update coins
+    if (randomCard.name === "i`amphoteric") {
+      const updatedCoins = newCoins + 150;
+      await updateUserById(req.user.id, { coins: updatedCoins });
+      io.to(user.id || user._id).emit('user-update', {
+        id: user.id || user._id,
+        teamName: user.teamName,
+        coins: updatedCoins,
+        score: user.score
+      });
+      // Notification for user
+      const userSpinNotification = {
+        id: Date.now().toString(),
+        userId: req.user.id,
+        type: 'spin',
+        message: `You spun and received: ${randomCard.name} (+150 coins instantly)`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'user'
+      };
+      await addNotification(userSpinNotification);
+      io.to(req.user.id).emit('notification', userSpinNotification);
+      // Admin notification
+      const adminSpinNotification = {
+        id: Date.now().toString(),
+        type: 'spin',
+        teamId: user.id || user._id,
+        teamName: user.teamName,
+        message: `${user.teamName} spun the wheel and got: ${randomCard.name} (+150 coins instantly)`,
+        cardName: randomCard.name,
+        cardType: randomCard.type,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'admin'
+      };
+      await addNotification(adminSpinNotification);
+      io.emit('admin-notification', adminSpinNotification);
+      // Scoreboard update
+      const updatedUsers = await getAllUsers();
+      io.emit('scoreboard-update', updatedUsers);
+      return res.json({ 
+        card: randomCard,
+        cost,
+        remainingCoins: updatedCoins
+      });
+    } else if (randomCard.name === 'Everything Against Me') {
+      const updatedCoins = newCoins - 75;
+      await updateUserById(req.user.id, { coins: updatedCoins });
+      io.to(user.id || user._id).emit('user-update', {
+        id: user.id || user._id,
+        teamName: user.teamName,
+        coins: updatedCoins,
+        score: user.score
+      });
+      // Notification for user
+      const userSpinNotification = {
+        id: Date.now().toString(),
+        userId: req.user.id,
+        type: 'spin',
+        message: `You spun and received: ${randomCard.name} (-75 coins instantly)`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'user'
+      };
+      await addNotification(userSpinNotification);
+      io.to(req.user.id).emit('notification', userSpinNotification);
+      // Admin notification
+      const adminSpinNotification = {
+        id: Date.now().toString(),
+        type: 'spin',
+        teamId: user.id || user._id,
+        teamName: user.teamName,
+        message: `${user.teamName} spun the wheel and got: ${randomCard.name} (-75 coins instantly)`,
+        cardName: randomCard.name,
+        cardType: randomCard.type,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'admin'
+      };
+      await addNotification(adminSpinNotification);
+      io.emit('admin-notification', adminSpinNotification);
+      // Scoreboard update
+      const updatedUsers = await getAllUsers();
+      io.emit('scoreboard-update', updatedUsers);
+      return res.json({ 
+        card: randomCard,
+        cost,
+        remainingCoins: updatedCoins
+      });
+    }
+
+    // Default: normal card, add to inventory
     const cardToAdd = {
       ...randomCard,
       id: Date.now().toString(),
