@@ -1804,21 +1804,21 @@ setInterval(async () => {
 function getCardsByType(spinType) {
   const cards = {
     luck: [
-      { name: "i`amphoteric", type: 'luck', effect: '+400 Coins instantly' },
-      { name: "Everything Against Me", type: 'luck', effect: 'Instantly lose 250 Coins' },
-      { name: 'el 7aramy', type: 'luck', effect: 'Btsr2 100 coin men ay khema, w law et3raft birg3o el double' }
+      { name: "i`amphoteric", type: 'luck', effect: '+150 Coins instantly' },
+      { name: "Everything Against Me", type: 'luck', effect: 'Instantly lose 75 Coins' },
+      { name: 'el-7aramy', type: 'luck', effect: 'Btsr2 100 coin men ay khema, w law et3raft birg3o el double' }
     ],
     attack: [
-      { name: 'wesh l wesh', type: 'attack', effect: '1v1 battle' },
-      { name: 'ana el 7aramy', type: 'attack', effect: 'Btakhod 100 coin men ay khema mnghir ay challenge' },
-      { name: 'ana w bas', type: 'attack', effect: 'Bt3mel risk 3ala haga' }
+      { name: 'wesh-le-wesh', type: 'attack', effect: '1v1 battle' },
+      { name: 'ana-el-7aramy', type: 'attack', effect: 'Btakhod 100 coins men ay khema mnghir ay challenge' },
+      { name: 'ana-w-bas', type: 'attack', effect: 'Bt3mel risk 3ala haga' }
     ],
     alliance: [
-      { name: 'el nadala', type: 'alliance', effect: 'Bt3mel t7alof w tlghih f ay wa2t w takhod el coins 3ady' },
-      { name: 'el sohab', type: 'alliance', effect: 'Bt3mel t7alof 3ady' },
-      { name: 'el melok', type: 'alliance', effect: 'Btst5dm el khema el taniaa y3melo el challenges makanak' }
+      { name: 'el-nadala', type: 'alliance', effect: 'Bt3mel t7alof w tlghih f ay wa2t w takhod el coins 3ady' },
+      { name: 'el-sohab', type: 'alliance', effect: 'Bt3mel t7alof 3ady' },
+      { name: 'el-melok', type: 'alliance', effect: 'Btst5dm el khema el taniaa y3melo el challenges makanak' }
     ]
-  };  
+  };
 
   if (spinType === 'random') {
     const allCards = [...cards.luck, ...cards.attack, ...cards.alliance];
