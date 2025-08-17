@@ -35,7 +35,7 @@ async function initializeApp() {
       }
     });
 
-    // Initialize Socket.IO
+        // Initialize Socket.IO
     initializeSocket(io);
     app.set('io', io);
 
@@ -115,28 +115,6 @@ process.on('unhandledRejection', (err) => {
 });
 
 module.exports = { app, server };
-initializeSocket(io);
-
-// Make io accessible in routes
-app.set('io', io);
-
-// Middleware
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (config.cors.allowedOrigins.includes(origin) || 
-        config.app.nodeEnv === 'development') {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: config.cors.credentials,
-  methods: config.cors.methods,
-  allowedHeaders: config.cors.allowedHeaders
-}));
 
 app.use(express.json());
 app.use(cookieParser());
