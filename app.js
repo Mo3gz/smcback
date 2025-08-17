@@ -54,6 +54,51 @@ async function connectToMongoDB() {
 // Initialize MongoDB connection
 connectToMongoDB();
 
+// Debug endpoint to check MongoDB connection and countries collection
+app.get('/api/debug/mongo', async (req, res) => {
+  try {
+    if (!mongoConnected || !db) {
+      return res.status(500).json({
+        status: 'error',
+        message: 'MongoDB not connected',
+        mongoConnected,
+        db: !!db,
+        env: {
+          MONGODB_URI: process.env.MONGODB_URI ? 'set' : 'not set',
+          MONGO_DB_NAME: process.env.MONGO_DB_NAME || 'not set (using default)'
+        }
+      });
+    }
+
+    const collections = await db.listCollections().toArray();
+    const countryCount = await db.collection('countries').countDocuments();
+    const sampleCountries = await db.collection('countries').find().limit(5).toArray();
+    
+    res.json({
+      status: 'success',
+      mongoConnected,
+      dbName: db.databaseName,
+      collections: collections.map(c => c.name),
+      countryCount,
+      sampleCountries,
+      env: {
+        NODE_ENV: process.env.NODE_ENV || 'development',
+        MONGODB_URI: process.env.MONGODB_URI ? 'set' : 'not set',
+        MONGO_DB_NAME: process.env.MONGO_DB_NAME || 'not set (using default)'
+      }
+    });
+  } catch (error) {
+    console.error('Debug endpoint error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      mongoConnected,
+      db: !!db,
+      error: error.toString()
+    });
+  }
+});
+
 // Middleware
 // CORS for deployment: allow multiple origins and better mobile support
 const allowedOrigins = [
@@ -1935,13 +1980,61 @@ io.on('connection', (socket) => {
 });
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    mongoConnected,
-    environment: process.env.NODE_ENV || 'development'
-  });
+app.get('/api/health', async (req, res) => {
+  try {
+    let countriesCount = 0;
+    if (mongoConnected && db) {
+      countriesCount = await db.collection('countries').countDocuments();
+    }
+    
+    res.json({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      mongoConnected,
+      environment: process.env.NODE_ENV || 'development',
+      countriesCount,
+      usingFallback: !mongoConnected
+    });
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      mongoConnected,
+      usingFallback: true
+    });
+  }
+});
+
+// Test endpoint to check MongoDB connection and countries collection
+app.get('/api/test/mongo', async (req, res) => {
+  try {
+    if (mongoConnected && db) {
+      const countries = await db.collection('countries').find().toArray();
+      res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        mongoConnected,
+        countriesCount: countries.length,
+        countries
+      });
+    } else {
+      res.status(500).json({
+        status: 'error',
+        error: 'MongoDB connection failed',
+        mongoConnected,
+        usingFallback: true
+      });
+    }
+  } catch (error) {
+    console.error('Test endpoint error:', error);
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      mongoConnected,
+      usingFallback: true
+    });
+  }
 });
 
 // Serve static files in production
