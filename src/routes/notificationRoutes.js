@@ -8,6 +8,8 @@ router.get('/', authenticate, notificationController.getUserNotifications);
 router.get('/unread-count', authenticate, notificationController.getUnreadCount);
 router.post('/:notificationId/read', authenticate, notificationController.markAsRead);
 router.post('/mark-all-read', authenticate, notificationController.markAllAsRead);
+// Add alias for frontend compatibility
+router.post('/read-all', authenticate, notificationController.markAllAsRead);
 
 // Admin routes
 router.post('/admin/global', authenticate, requireAdmin, notificationController.sendGlobalNotification);

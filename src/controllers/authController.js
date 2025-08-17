@@ -136,6 +136,13 @@ exports.getCurrentUser = async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
+    // Include the auth token in response headers for frontend access
+    const token = req.cookies[config.jwt.cookieName];
+    if (token) {
+      res.header('x-auth-token', token);
+      console.log('🔑 Sent auth token in headers for user:', req.user.id);
+    }
+    
     // Don't send password back
     const { password, ...userWithoutPassword } = req.user;
     res.json(userWithoutPassword);

@@ -74,15 +74,22 @@ app.options('*', cors());
 // Additional CORS headers middleware
 app.use((req, res, next) => {
   const origin = req.headers.origin;
+  
+  // Log all CORS requests for debugging
+  console.log(`🌐 CORS Request: ${req.method} ${req.path} from ${origin}`);
+  console.log(`🔍 CORS Headers:`, {
+    'Access-Control-Allow-Origin': res.getHeader('Access-Control-Allow-Origin'),
+    'Access-Control-Allow-Credentials': res.getHeader('Access-Control-Allow-Credentials'),
+    'Access-Control-Allow-Methods': res.getHeader('Access-Control-Allow-Methods'),
+    'Access-Control-Allow-Headers': res.getHeader('Access-Control-Allow-Headers')
+  });
+  
   if (origin && config.cors.allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
   }
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', config.cors.methods.join(', '));
   res.header('Access-Control-Allow-Headers', config.cors.allowedHeaders.join(', '));
-  
-  // Log CORS requests for debugging
-  console.log(`CORS Request: ${req.method} ${req.path} from ${origin}`);
   
   next();
 });
@@ -188,6 +195,20 @@ async function initializeApp() {
       });
     });
 
+    // Public test endpoint (no auth required)
+    app.get('/api/public-test', (req, res) => {
+      res.json({
+        message: 'Public endpoint working!',
+        origin: req.headers.origin,
+        timestamp: new Date(),
+        cors: {
+          allowedOrigins: config.cors.allowedOrigins,
+          credentials: config.cors.credentials,
+          methods: config.cors.methods
+        }
+      });
+    });
+
     // Netlify specific CORS test
     app.get('/api/netlify-test', (req, res) => {
       const origin = req.headers.origin;
@@ -200,6 +221,34 @@ async function initializeApp() {
         isAllowed: isAllowed,
         allowedOrigins: config.cors.allowedOrigins,
         timestamp: new Date()
+      });
+    });
+
+    // Comprehensive CORS debug endpoint
+    app.get('/api/cors-debug', (req, res) => {
+      const origin = req.headers.origin;
+      const isAllowed = config.cors.allowedOrigins.includes(origin) || 
+                       config.cors.allowedOrigins.includes(origin.replace(/\/$/, ''));
+      
+      res.json({
+        message: 'CORS Debug Information',
+        request: {
+          origin: origin,
+          method: req.method,
+          path: req.path,
+          headers: req.headers
+        },
+        cors: {
+          isAllowed: isAllowed,
+          allowedOrigins: config.cors.allowedOrigins,
+          credentials: config.cors.credentials,
+          methods: config.cors.methods,
+          allowedHeaders: config.cors.allowedHeaders
+        },
+        environment: {
+          nodeEnv: config.app.nodeEnv,
+          timestamp: new Date()
+        }
       });
     });
 
