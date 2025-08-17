@@ -5,10 +5,27 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
 const path = require('path');
-require('dotenv').config();
+// Load environment variables first
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
+
+// Debug environment variables
+console.log('🔧 Environment:', {
+  NODE_ENV: process.env.NODE_ENV,
+  JWT_SECRET: process.env.JWT_SECRET ? '*** (set)' : '❌ NOT SET',
+  MONGODB_URI: process.env.MONGODB_URI ? '*** (set)' : '❌ NOT SET',
+  MONGO_DB_NAME: process.env.MONGO_DB_NAME || 'scoring-system'
+});
+
 const { MongoClient, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = process.env.JWT_SECRET || 'Aymaan';
+
+// Use environment variable or fallback to a default (not recommended for production)
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'Aymaan');
+
+if (!JWT_SECRET) {
+  console.error('❌ Fatal Error: JWT_SECRET is not configured');
+  process.exit(1);
+}
 
 const app = express();
 const server = http.createServer(app);
