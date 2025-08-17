@@ -15,11 +15,17 @@ const server = http.createServer(app);
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('✅ CORS allowed (no origin): mobile app or direct request');
+      return callback(null, true);
+    }
+    
+    console.log(`🔍 CORS checking origin: ${origin}`);
+    console.log(`📋 Allowed origins: ${config.cors.allowedOrigins.join(', ')}`);
     
     // Check if origin is in allowed list (exact match)
     if (config.cors.allowedOrigins.includes(origin)) {
-      console.log(`✅ CORS allowed: ${origin}`);
+      console.log(`✅ CORS allowed (exact match): ${origin}`);
       return callback(null, true);
     }
     
@@ -61,37 +67,85 @@ app.use(cors({
     console.log(`Allowed origins: ${config.cors.allowedOrigins.join(', ')}`);
     callback(new Error('Not allowed by CORS'));
   },
-  credentials: config.cors.credentials,
-  methods: config.cors.methods,
-  allowedHeaders: config.cors.allowedHeaders,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With', 
+    'Cache-Control', 
+    'Pragma', 
+    'Accept', 
+    'Origin', 
+    'x-auth-token',
+    'Access-Control-Allow-Origin',
+    'Access-Control-Allow-Credentials',
+    'Access-Control-Allow-Methods',
+    'Access-Control-Allow-Headers'
+  ],
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
 
-// Handle preflight requests
-app.options('*', cors());
+// Handle preflight requests explicitly
+app.options('*', (req, res) => {
+  const origin = req.headers.origin;
+  console.log(`🔄 Preflight request for ${req.method} ${req.path} from ${origin}`);
+  
+  // Set CORS headers for preflight
+  if (origin && config.cors.allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cache-Control, Pragma, Accept, Origin, x-auth-token');
+  res.header('Access-Control-Max-Age', '86400'); // 24 hours
+  
+  res.status(204).end();
+});
 
-// Additional CORS headers middleware
+// Additional CORS headers middleware - ensure headers are always set
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
   // Log all CORS requests for debugging
   console.log(`🌐 CORS Request: ${req.method} ${req.path} from ${origin}`);
-  console.log(`🔍 CORS Headers:`, {
+  
+  // Always set CORS headers for allowed origins
+  if (origin && config.cors.allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    console.log(`✅ Set CORS origin header: ${origin}`);
+  }
+  
+  // Always set these headers
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Cache-Control, Pragma, Accept, Origin, x-auth-token');
+  
+  console.log(`🔍 Final CORS Headers:`, {
     'Access-Control-Allow-Origin': res.getHeader('Access-Control-Allow-Origin'),
     'Access-Control-Allow-Credentials': res.getHeader('Access-Control-Allow-Credentials'),
     'Access-Control-Allow-Methods': res.getHeader('Access-Control-Allow-Methods'),
     'Access-Control-Allow-Headers': res.getHeader('Access-Control-Allow-Headers')
   });
   
-  if (origin && config.cors.allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-  }
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', config.cors.methods.join(', '));
-  res.header('Access-Control-Allow-Headers', config.cors.allowedHeaders.join(', '));
-  
   next();
+});
+
+// Simple CORS test endpoint - no auth required
+app.get('/cors-test', (req, res) => {
+  const origin = req.headers.origin;
+  console.log(`🧪 CORS test endpoint called from: ${origin}`);
+  
+  res.json({
+    message: 'CORS test successful!',
+    origin: origin,
+    timestamp: new Date(),
+    cors: {
+      allowedOrigins: config.cors.allowedOrigins,
+      isAllowed: config.cors.allowedOrigins.includes(origin)
+    }
+  });
 });
 
 // Initialize database connection first
