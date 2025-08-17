@@ -603,30 +603,17 @@ function authenticateToken(req, res, next) {
   // 4. Check request body (for POST requests)
   else if (req.body && req.body.token) {
     token = req.body.token;
-    console.log('🔐 Token found in request body');
-  }
-  
-  console.log('🔐 Token found:', token ? 'Yes' : 'No');
-  
-  // Log token source for debugging
-  if (token) {
-    console.log('🔐 Token source:', 
-      authHeader && authHeader.startsWith('Bearer ') ? 'authorization header' :
-      req.headers['x-auth-token'] ? 'x-auth-token header' :
-      cookies.token ? 'cookie' :
-      req.body?.token ? 'request body' : 'unknown'
-    );
   }
   
   if (!token) {
-    console.log('❌ No token provided');
+    console.log('❌ No token provided in request');
     console.log('🔐 === AUTHENTICATION END (NO TOKEN) ===');
     return res.status(401).json({ 
       error: 'Access token required',
       debug: {
-        cookies: req.cookies,
-        authHeader: req.headers.authorization,
-        xAuthToken: req.headers['x-auth-token']
+        cookies: Object.keys(req.cookies || {}).length > 0 ? 'Cookies present' : 'No cookies',
+        hasAuthHeader: !!req.headers.authorization,
+        hasXAuthToken: !!req.headers['x-auth-token']
       }
     });
   }
@@ -634,32 +621,100 @@ function authenticateToken(req, res, next) {
   console.log('🔐 JWT_SECRET exists:', JWT_SECRET ? 'Yes' : 'No');
   console.log('🔐 Token length:', token ? token.length : 'null/undefined');
   console.log('🔐 Token type:', typeof token);
-  console.log('🔐 Token preview:', token ? `${token.substring(0, 10)}...${token.substring(-10)}` : 'null/undefined');
   
+  // Log a preview of the token (first and last 10 chars) for debugging
+  const tokenPreview = token ? `${token.substring(0, 10)}...${token.substring(-10)}` : 'null/undefined';
+  console.log('🔐 Token preview:', tokenPreview);
+  
+  // Basic token validation
   if (!token || typeof token !== 'string') {
-    console.log('❌ Invalid token format - must be a non-empty string');
+    const error = new Error('Invalid token format - must be a non-empty string');
+    console.log(`❌ ${error.message}`);
+    console.log('🔐 === AUTHENTICATION END (INVALID FORMAT) ===');
     return res.status(401).json({ 
       error: 'Invalid token format',
-      debug: { tokenType: typeof token }
+      debug: { 
+        tokenType: typeof token,
+        tokenLength: token ? token.length : 0,
+        tokenPreview
+      }
+    });
+  }
+  
+  // Check token format (should be in format xxxxx.yyyyy.zzzzz)
+  const tokenParts = token.split('.');
+  if (tokenParts.length !== 3) {
+    const error = new Error('Invalid token format - must have 3 parts');
+    console.log(`❌ ${error.message}`);
+    console.log('🔐 === AUTHENTICATION END (INVALID FORMAT) ===');
+    return res.status(401).json({ 
+      error: 'Invalid token format',
+      debug: {
+        tokenParts: tokenParts.length,
+        tokenPreview
+      }
     });
   }
   
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('🔐 Attempting to verify JWT token...');
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      algorithms: ['HS256'],
+      ignoreExpiration: false,
+      clockTolerance: 30 // 30 seconds tolerance for clock skew
+    });
+    
     console.log('✅ Token verified successfully');
-    console.log('✅ Decoded user:', JSON.stringify(decoded, null, 2));
-    console.log('🔐 === AUTHENTICATION END (SUCCESS) ===');
+    console.log('✅ Token issued at:', new Date(decoded.iat * 1000).toISOString());
+    if (decoded.exp) {
+      console.log('✅ Token expires at:', new Date(decoded.exp * 1000).toISOString());
+    }
+    console.log('✅ Decoded user:', JSON.stringify({
+      id: decoded.id,
+      username: decoded.username,
+      role: decoded.role,
+      // Don't log sensitive data
+      ...(decoded.iat && { iat: `[timestamp: ${new Date(decoded.iat * 1000).toISOString()}]` }),
+      ...(decoded.exp && { exp: `[timestamp: ${new Date(decoded.exp * 1000).toISOString()}]` })
+    }, null, 2));
+    
+    // Attach user to request
     req.user = decoded;
+    
+    console.log('🔐 === AUTHENTICATION END (SUCCESS) ===');
     return next();
   } catch (err) {
-    console.log('❌ Token verification failed:', err.message);
-    console.log('❌ Error details:', err);
+    let errorMessage = 'Invalid token';
+    let statusCode = 401;
+    
+    // More specific error messages
+    if (err.name === 'TokenExpiredError') {
+      errorMessage = 'Token has expired';
+      statusCode = 401; // 401 Unauthorized is more appropriate for expired tokens
+    } else if (err.name === 'JsonWebTokenError') {
+      errorMessage = `Invalid token: ${err.message}`;
+    } else if (err.name === 'NotBeforeError') {
+      errorMessage = 'Token not yet valid';
+    }
+    
+    console.error(`❌ Token verification failed: ${err.name} - ${err.message}`);
+    console.error('❌ Error details:', {
+      name: err.name,
+      message: err.message,
+      ...(err.expiredAt && { expiredAt: new Date(err.expiredAt).toISOString() }),
+      ...(err.date && { currentDate: new Date(err.date).toISOString() })
+    });
+    
     console.log('🔐 === AUTHENTICATION END (TOKEN INVALID) ===');
-    return res.status(401).json({ 
-      error: 'Invalid token',
+    
+    return res.status(statusCode).json({ 
+      error: errorMessage,
       debug: {
-        tokenError: err.message,
-        tokenPreview: token ? `${token.substring(0, 10)}...${token.substring(-10)}` : 'null/undefined'
+        error: err.name,
+        message: err.message,
+        ...(err.expiredAt && { expiredAt: new Date(err.expiredAt).toISOString() }),
+        ...(err.date && { currentDate: new Date(err.date).toISOString() }),
+        tokenPreview
       }
     });
   }
