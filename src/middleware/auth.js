@@ -9,6 +9,11 @@ const getTokenFromRequest = (req) => {
     return authHeader.split(' ')[1];
   }
   
+  // Check x-auth-token header
+  if (req.headers['x-auth-token']) {
+    return req.headers['x-auth-token'];
+  }
+  
   // Then check cookies
   if (req.cookies && req.cookies[config.jwt.cookieName]) {
     return req.cookies[config.jwt.cookieName];

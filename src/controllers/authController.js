@@ -140,3 +140,23 @@ exports.getCurrentUser = async (req, res) => {
     res.status(500).json({ error: 'Failed to get current user' });
   }
 };
+
+exports.getScoreboard = async (req, res) => {
+  try {
+    const users = await User.getLeaderboard(20); // Get top 20 users
+    
+    // Map to include relevant fields for the scoreboard
+    const scoreboard = users.map(user => ({
+      id: user.id,
+      username: user.username,
+      teamName: user.teamName,
+      score: user.score || 0,
+      coins: user.coins || 0
+    }));
+    
+    res.json(scoreboard);
+  } catch (error) {
+    console.error('Get scoreboard error:', error);
+    res.status(500).json({ error: 'Failed to get scoreboard' });
+  }
+};

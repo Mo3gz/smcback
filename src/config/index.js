@@ -16,7 +16,9 @@ const config = {
       'http://localhost:3000',
       'http://localhost:3001',
       'https://localhost:3000',
-      'https://localhost:3001'
+      'https://localhost:3001',
+      'https://smcfront1-production.up.railway.app',
+      'https://smcfront1.vercel.app'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
