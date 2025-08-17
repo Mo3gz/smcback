@@ -43,6 +43,11 @@ exports.useItem = async (req, res) => {
 
     // Get current user data
     const user = await User.findById(userId);
+    if (!user) {
+      console.log('❌ User not found:', userId);
+      return res.status(404).json({ error: 'User not found' });
+    }
+    console.log('👤 User found:', { id: user.id, role: user.role, teamName: user.teamName });
 
     // Handle different item types
     switch (item.type) {
@@ -50,54 +55,80 @@ exports.useItem = async (req, res) => {
         // Handle luck cards - some have instant effects
         if (item.name === "i`amphoteric") {
           // Instant +150 coins
+          console.log('💰 Updating user coins for i`amphoteric:', { 
+            userId, 
+            currentCoins: user.coins, 
+            newCoins: (user.coins || 0) + 150 
+          });
           await User.updateUser(userId, {
             coins: (user.coins || 0) + 150
           });
+          console.log('✅ User coins updated');
           
           await Notification.create({
             userId,
             type: 'item-used',
             message: `You used ${item.name} and gained 150 coins instantly!`,
             read: false
-          });
+          }).catch(err => console.log('⚠️ Notification creation failed:', err));
         } else if (item.name === "Everything Against Me") {
           // Instant -75 coins
           await User.updateUser(userId, {
             coins: Math.max(0, (user.coins || 0) - 75)
           });
           
-          await Notification.create({
-            userId,
-            type: 'item-used',
-            message: `You used ${item.name} and lost 75 coins!`,
-            read: false
-          });
+          // Create notification with error handling
+          try {
+            await Notification.create({
+              userId,
+              type: 'item-used',
+              message: `You used ${item.name} and lost 75 coins!`,
+              read: false
+            });
+          } catch (err) {
+            console.log('⚠️ Notification creation failed:', err);
+          }
         } else {
           // Other luck cards create notifications for admin/manual handling
-          await Notification.create({
-            userId,
-            type: 'item-used',
-            message: `You used ${item.name}: ${item.effect}. An admin will handle this.`,
-            read: false
-          });
+          try {
+            await Notification.create({
+              userId,
+              type: 'item-used',
+              message: `You used ${item.name}: ${item.effect}. An admin will handle this.`,
+              read: false
+            });
+          } catch (err) {
+            console.log('⚠️ Notification creation failed:', err);
+          }
         }
         break;
 
       case 'attack':
         // Attack cards require a target
         if (!targetUserId) {
+          console.log('❌ No target user provided for attack card');
           return res.status(400).json({ error: 'Target user is required for attack cards' });
         }
 
+        console.log('🎯 Looking for target user:', targetUserId);
         const targetUser = await User.findById(targetUserId);
         if (!targetUser) {
+          console.log('❌ Target user not found:', targetUserId);
           return res.status(404).json({ error: 'Target user not found' });
         }
+        console.log('🎯 Target user found:', { id: targetUser.id, teamName: targetUser.teamName });
 
         // Handle specific attack cards
         if (item.name === 'ana-el-7aramy') {
           // Steal 100 coins directly
           const coinsToSteal = Math.min(targetUser.coins || 0, 100);
+          console.log('💰 Coin stealing logic:', {
+            attackerCoins: user.coins,
+            targetCoins: targetUser.coins,
+            coinsToSteal,
+            newAttackerCoins: (user.coins || 0) + coinsToSteal,
+            newTargetCoins: Math.max(0, (targetUser.coins || 0) - coinsToSteal)
+          });
           
           await Promise.all([
             User.updateUser(userId, {
@@ -107,78 +138,100 @@ exports.useItem = async (req, res) => {
               coins: Math.max(0, (targetUser.coins || 0) - coinsToSteal)
             })
           ]);
+          console.log('✅ Coin stealing completed');
 
-          await Promise.all([
-            Notification.create({
-              userId,
-              type: 'item-used',
-              message: `You used ${item.name} and stole ${coinsToSteal} coins from ${targetUser.teamName}!`,
-              read: false
-            }),
-            Notification.create({
-              userId: targetUserId,
-              type: 'item-used-against',
-              message: `${user.teamName} used ${item.name} and stole ${coinsToSteal} of your coins!`,
-              read: false
-            })
-          ]);
+          // Create notifications with error handling
+          try {
+            await Promise.all([
+              Notification.create({
+                userId,
+                type: 'item-used',
+                message: `You used ${item.name} and stole ${coinsToSteal} coins from ${targetUser.teamName}!`,
+                read: false
+              }),
+              Notification.create({
+                userId: targetUserId,
+                type: 'item-used-against',
+                message: `${user.teamName} used ${item.name} and stole ${coinsToSteal} of your coins!`,
+                read: false
+              })
+            ]);
+          } catch (err) {
+            console.log('⚠️ Notification creation failed:', err);
+          }
         } else {
           // Other attack cards create notifications for admin/manual handling
-          await Promise.all([
-            Notification.create({
-              userId,
-              type: 'item-used',
-              message: `You used ${item.name} against ${targetUser.teamName}: ${item.effect}`,
-              read: false
-            }),
-            Notification.create({
-              userId: targetUserId,
-              type: 'item-used-against',
-              message: `${user.teamName} used ${item.name} against you: ${item.effect}`,
-              read: false
-            })
-          ]);
+          try {
+            await Promise.all([
+              Notification.create({
+                userId,
+                type: 'item-used',
+                message: `You used ${item.name} against ${targetUser.teamName}: ${item.effect}`,
+                read: false
+              }),
+              Notification.create({
+                userId: targetUserId,
+                type: 'item-used-against',
+                message: `${user.teamName} used ${item.name} against you: ${item.effect}`,
+                read: false
+              })
+            ]);
+          } catch (err) {
+            console.log('⚠️ Notification creation failed:', err);
+          }
         }
         break;
 
       case 'alliance':
         // Alliance cards require a target
         if (!targetUserId) {
+          console.log('❌ No target user provided for alliance card');
           return res.status(400).json({ error: 'Target user is required for alliance cards' });
         }
 
+        console.log('🤝 Looking for alliance target:', targetUserId);
         const allianceTarget = await User.findById(targetUserId);
         if (!allianceTarget) {
+          console.log('❌ Alliance target not found:', targetUserId);
           return res.status(404).json({ error: 'Target user not found' });
         }
+        console.log('🤝 Alliance target found:', { id: allianceTarget.id, teamName: allianceTarget.teamName });
 
         // Create notifications for alliance
-        await Promise.all([
-          Notification.create({
-            userId,
-            type: 'item-used',
-            message: `You used ${item.name} with ${allianceTarget.teamName}: ${item.effect}`,
-            read: false
-          }),
-          Notification.create({
-            userId: targetUserId,
-            type: 'item-used-against',
-            message: `${user.teamName} used ${item.name} with you: ${item.effect}`,
-            read: false
-          })
-        ]);
+        try {
+          await Promise.all([
+            Notification.create({
+              userId,
+              type: 'item-used',
+              message: `You used ${item.name} with ${allianceTarget.teamName}: ${item.effect}`,
+              read: false
+            }),
+            Notification.create({
+              userId: targetUserId,
+              type: 'item-used-against',
+              message: `${user.teamName} used ${item.name} with you: ${item.effect}`,
+              read: false
+            })
+          ]);
+        } catch (err) {
+          console.log('⚠️ Notification creation failed:', err);
+        }
         break;
 
       // Legacy support for old card types
       case 'score-boost':
       case 'coin-boost':  
       case 'special-card':
-        await Notification.create({
-          userId,
-          type: 'item-used',
-          message: `You used ${item.name}: ${item.effect}`,
-          read: false
-        });
+        try {
+          await Notification.create({
+            userId,
+            type: 'item-used',
+            message: `You used ${item.name}: ${item.effect}`,
+            read: false
+          });
+        } catch (err) {
+          console.log('⚠️ Notification creation failed:', err);
+        }
         break;
 
       default:
@@ -186,8 +239,9 @@ exports.useItem = async (req, res) => {
     }
 
     // Remove the used item from inventory
-    await Inventory.removeItem(userId, itemId);
-    console.log('✅ Item removed from inventory');
+    console.log('🗑️ Attempting to remove item from inventory:', { userId, itemId });
+    const removeResult = await Inventory.removeItem(userId, itemId);
+    console.log('✅ Item removed from inventory, result:', removeResult);
 
     // Emit socket event
     if (req.io) {
@@ -207,8 +261,14 @@ exports.useItem = async (req, res) => {
     console.log('✅ Card used successfully');
     res.json({ success: true });
   } catch (error) {
-    console.error('Use item error:', error);
-    res.status(500).json({ error: 'Failed to use item' });
+    console.error('❌ Use item error:', {
+      error: error.message,
+      stack: error.stack,
+      userId,
+      itemId,
+      targetUserId
+    });
+    res.status(500).json({ error: 'Failed to use item: ' + error.message });
   }
 };
 
@@ -398,5 +458,40 @@ exports.validatePromoCode = async (req, res) => {
   } catch (error) {
     console.error('Validate promo code error:', error);
     res.status(500).json({ valid: false, discount: 0 });
+  }
+};
+
+// Debug endpoint to help troubleshoot inventory issues
+exports.debugInventory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findById(userId);
+    const inventory = await Inventory.getUserInventory(userId);
+    
+    res.json({
+      debug: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        teamName: user.teamName,
+        role: user.role,
+        coins: user.coins,
+        score: user.score
+      },
+      inventory: {
+        count: inventory.length,
+        items: inventory.map(item => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          effect: item.effect,
+          obtainedAt: item.obtainedAt
+        }))
+      },
+      timestamp: new Date()
+    });
+  } catch (error) {
+    console.error('Debug inventory error:', error);
+    res.status(500).json({ error: 'Debug failed: ' + error.message });
   }
 };

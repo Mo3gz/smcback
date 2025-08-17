@@ -8,6 +8,7 @@ router.get('/', authenticate, inventoryController.getUserInventory);
 router.post('/use', authenticate, inventoryController.useItem);
 router.post('/spin', authenticate, inventoryController.spinWheel);
 router.post('/promocode/validate', authenticate, inventoryController.validatePromoCode);
+router.get('/debug', authenticate, inventoryController.debugInventory);
 
 // Admin routes
 router.post('/admin/add', authenticate, requireAdmin, inventoryController.addItemToInventory);

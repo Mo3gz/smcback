@@ -41,6 +41,7 @@ const authenticate = async (req, res, next) => {
 
     // Attach user to request
     req.user = user;
+    console.log('🔑 Authentication successful for user:', { id: user.id, role: user.role, endpoint: req.path });
     next();
   } catch (error) {
     console.error('Authentication error:', error);

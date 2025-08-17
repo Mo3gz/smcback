@@ -13,13 +13,19 @@ class Notification extends BaseModel {
   }
 
   async create(notification) {
+    console.log('📝 Creating notification:', notification);
+    
+    // Add required fields
     const newNotification = {
       ...notification,
+      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Add ID field
       timestamp: new Date(),
       read: false
     };
     
+    console.log('📝 Prepared notification:', newNotification);
     const result = await this.collection.insertOne(newNotification);
+    console.log('✅ Notification created with _id:', result.insertedId);
     return { ...newNotification, _id: result.insertedId };
   }
 
