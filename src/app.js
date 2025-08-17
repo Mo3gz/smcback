@@ -252,6 +252,32 @@ async function initializeApp() {
       });
     });
 
+    // Auth test endpoint
+    app.get('/api/auth-test', (req, res) => {
+      const origin = req.headers.origin;
+      const cookies = req.cookies;
+      const authToken = cookies[config.jwt.cookieName];
+      
+      res.json({
+        message: 'Auth Test Information',
+        request: {
+          origin: origin,
+          method: req.method,
+          path: req.path,
+          hasCookies: !!Object.keys(cookies).length,
+          cookieNames: Object.keys(cookies),
+          hasAuthCookie: !!authToken,
+          authTokenLength: authToken ? authToken.length : 0
+        },
+        auth: {
+          cookieName: config.jwt.cookieName,
+          hasToken: !!authToken,
+          tokenPreview: authToken ? authToken.substring(0, 20) + '...' : 'No token'
+        },
+        timestamp: new Date()
+      });
+    });
+
     // API Routes
     app.use('/api/auth', authRoutes);
     app.use('/api/countries', countryRoutes);
