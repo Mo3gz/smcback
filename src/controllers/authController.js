@@ -10,6 +10,7 @@ const getCookieOptions = () => ({
   sameSite: config.app.nodeEnv === 'production' ? 'none' : 'lax',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   path: '/',
+  domain: config.app.nodeEnv === 'production' ? undefined : undefined, // Let browser handle domain
 });
 
 const generateToken = (userId) => {
@@ -38,9 +39,12 @@ exports.login = async (req, res) => {
 
     // Generate token
     const token = generateToken(user.id);
+    console.log('🔑 Generated token for user:', user.id, 'token length:', token.length);
 
     // Set cookie
-    res.cookie(config.jwt.cookieName, token, getCookieOptions());
+    const cookieOptions = getCookieOptions();
+    res.cookie(config.jwt.cookieName, token, cookieOptions);
+    console.log('🍪 Cookie set with options:', cookieOptions);
 
     // Don't send password back
     const { password: _, ...userWithoutPassword } = user;

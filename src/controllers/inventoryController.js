@@ -266,9 +266,22 @@ exports.useItem = async (req, res) => {
       stack: error.stack,
       userId,
       itemId,
-      targetUserId
+      targetUserId,
+      userExists: !!req.user,
+      userName: req.user?.username
     });
-    res.status(500).json({ error: 'Failed to use item: ' + error.message });
+    
+    // Send more specific error message
+    let errorMessage = 'Failed to use item';
+    if (error.message.includes('not found')) {
+      errorMessage = 'Item or user not found';
+    } else if (error.message.includes('permission')) {
+      errorMessage = 'Permission denied';
+    } else {
+      errorMessage = `Failed to use item: ${error.message}`;
+    }
+    
+    res.status(500).json({ error: errorMessage });
   }
 };
 

@@ -26,25 +26,38 @@ const authenticate = async (req, res, next) => {
   try {
     const token = getTokenFromRequest(req);
     
+    console.log('🔒 Authentication attempt for:', req.method, req.path);
+    console.log('🔑 Token found:', !!token, token ? 'Length: ' + token.length : 'No token');
+    
     if (!token) {
-      console.log('❌ No token provided');
+      console.log('❌ No token provided for', req.path);
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const decoded = jwt.verify(token, config.jwt.secret);
+    console.log('✅ Token decoded successfully for userId:', decoded.userId);
+    
     const user = await User.findById(decoded.userId);
     
     if (!user) {
-      console.log('❌ User not found');
+      console.log('❌ User not found for ID:', decoded.userId);
       return res.status(401).json({ error: 'User not found' });
     }
 
     // Attach user to request
     req.user = user;
-    console.log('🔑 Authentication successful for user:', { id: user.id, role: user.role, endpoint: req.path });
+    console.log('🔑 Authentication successful for user:', { 
+      id: user.id, 
+      username: user.username,
+      role: user.role, 
+      endpoint: req.path 
+    });
     next();
   } catch (error) {
-    console.error('Authentication error:', error);
+    console.error('❌ Authentication error for', req.path, ':', {
+      name: error.name,
+      message: error.message
+    });
     
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired' });
