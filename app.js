@@ -545,18 +545,55 @@ function authenticateToken(req, res, next) {
     cookie: req.headers.cookie,
     origin: req.headers.origin
   }, null, 2));
-  console.log('🔐 Cookies:', JSON.stringify(req.cookies, null, 2));
-  const token = req.cookies.token || 
-                (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
-                req.headers['x-auth-token'] ||
-                req.body.token;
+  
+  // Parse cookies manually if cookie-parser is not working
+  let cookies = {};
+  if (req.headers.cookie) {
+    req.headers.cookie.split(';').forEach(cookie => {
+      const parts = cookie.split('=');
+      cookies[parts[0].trim()] = (parts[1] || '').trim();
+    });
+  }
+  
+  console.log('🔐 Parsed Cookies:', JSON.stringify(cookies, null, 2));
+  
+  // Try to get token from different sources
+  let token = null;
+  const authHeader = req.headers.authorization;
+  
+  // 1. Check Authorization header
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+    console.log('🔐 Token found in Authorization header');
+  } 
+  // 2. Check x-auth-token header
+  else if (req.headers['x-auth-token']) {
+    token = req.headers['x-auth-token'];
+    console.log('🔐 Token found in x-auth-token header');
+  }
+  // 3. Check cookies
+  else if (cookies.token) {
+    token = cookies.token;
+    console.log('🔐 Token found in cookies');
+  }
+  // 4. Check request body (for POST requests)
+  else if (req.body && req.body.token) {
+    token = req.body.token;
+    console.log('🔐 Token found in request body');
+  }
+  
   console.log('🔐 Token found:', token ? 'Yes' : 'No');
-  console.log('🔐 Token source:', 
-    req.cookies.token ? 'cookie' : 
-    req.headers.authorization ? 'authorization header' :
-    req.headers['x-auth-token'] ? 'x-auth-token header' :
-    req.body.token ? 'request body' : 'none'
-  );
+  
+  // Log token source for debugging
+  if (token) {
+    console.log('🔐 Token source:', 
+      authHeader && authHeader.startsWith('Bearer ') ? 'authorization header' :
+      req.headers['x-auth-token'] ? 'x-auth-token header' :
+      cookies.token ? 'cookie' :
+      req.body?.token ? 'request body' : 'unknown'
+    );
+  }
+  
   if (!token) {
     console.log('❌ No token provided');
     console.log('🔐 === AUTHENTICATION END (NO TOKEN) ===');
