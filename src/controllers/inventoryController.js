@@ -20,14 +20,26 @@ exports.useItem = async (req, res) => {
     const { itemId, targetUserId, description } = req.body;
     const userId = req.user.id;
 
+    console.log('🎮 Card usage attempt:', {
+      userId,
+      itemId,
+      targetUserId,
+      description,
+      userRole: req.user.role
+    });
+
     // Get user's inventory
     const inventory = await Inventory.getUserInventory(userId);
+    console.log('📦 User inventory:', inventory.length, 'items');
     
     // Find the item
     const item = inventory.find(item => item.id === itemId);
     if (!item) {
+      console.log('❌ Item not found in inventory:', itemId);
       return res.status(404).json({ error: 'Item not found in inventory' });
     }
+
+    console.log('🃏 Found item:', item);
 
     // Get current user data
     const user = await User.findById(userId);
@@ -175,18 +187,24 @@ exports.useItem = async (req, res) => {
 
     // Remove the used item from inventory
     await Inventory.removeItem(userId, itemId);
+    console.log('✅ Item removed from inventory');
 
     // Emit socket event
     if (req.io) {
       req.io.emit('inventory-update', { userId });
       req.io.emit('user-update', { userId });
+      console.log('📡 Socket events emitted for user:', userId);
       
       if (targetUserId) {
         req.io.emit('inventory-update', { userId: targetUserId });
         req.io.emit('user-update', { userId: targetUserId });
+        console.log('📡 Socket events emitted for target:', targetUserId);
       }
+    } else {
+      console.log('⚠️ No socket.io instance available');
     }
 
+    console.log('✅ Card used successfully');
     res.json({ success: true });
   } catch (error) {
     console.error('Use item error:', error);

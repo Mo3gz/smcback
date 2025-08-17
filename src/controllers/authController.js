@@ -143,15 +143,16 @@ exports.getCurrentUser = async (req, res) => {
 
 exports.getScoreboard = async (req, res) => {
   try {
-    const users = await User.getLeaderboard(20); // Get top 20 users
+    const users = await User.getLeaderboard(50); // Get more users to include admins
     
-    // Map to include relevant fields for the scoreboard
+    // Map to include relevant fields for the scoreboard, including role
     const scoreboard = users.map(user => ({
       id: user.id,
       username: user.username,
-      teamName: user.teamName,
+      teamName: user.teamName || user.username, // Fallback to username if no teamName
       score: user.score || 0,
-      coins: user.coins || 0
+      coins: user.coins || 0,
+      role: user.role || 'user' // Include role for filtering
     }));
     
     res.json(scoreboard);

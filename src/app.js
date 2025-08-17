@@ -60,6 +60,12 @@ async function initializeApp() {
 
     app.use(express.json());
     app.use(cookieParser());
+    
+    // Add socket.io to request object for use in controllers
+    app.use((req, res, next) => {
+      req.io = io;
+      next();
+    });
 
     // Health check endpoint
     app.get('/health', (req, res) => {
