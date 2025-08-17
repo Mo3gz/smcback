@@ -1012,111 +1012,97 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
   const { countryId } = req.body;
   const userId = req.user.id;
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
-    const country = await Country.findById(countryId).session(session);
-    const user = await User.findById(userId).session(session);
+    // Get country and user using helper functions
+    const country = await findCountryById(countryId);
+    const user = await findUserById(userId);
 
     if (!country) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(404).json({ error: 'Country not found' });
     }
 
     if (country.owner) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(400).json({ error: 'Country already owned' });
     }
 
     if (user.coins < country.cost) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(400).json({ error: 'Insufficient coins' });
     }
 
     // Update country ownership
-    country.owner = userId;
-    country.purchasedAt = new Date();
-    await country.save({ session });
+    const now = new Date();
+    await updateCountryById(countryId, {
+      owner: userId,
+      purchasedAt: now.toISOString(),
+      lastMined: now.toISOString()  // Initialize lastMined when country is purchased
+    });
 
     // Update user's coins and score
-    user.coins -= country.cost;
-    user.score += country.score;
-    await user.save({ session });
+    await updateUserById(userId, {
+      coins: user.coins - country.cost,
+      score: (user.score || 0) + (country.score || 0)
+    });
 
     // Create notification for admin
-    const adminNotification = new Notification({
+    await addNotification({
       userId: 'admin',
       type: 'country_purchased',
       title: 'New Country Purchased',
       message: `${user.username} has purchased ${country.name}`,
       data: {
-        userId: user._id,
+        userId: userId,
         username: user.username,
-        countryId: country._id,
+        countryId: countryId,
         countryName: country.name,
         miningRate: country.miningRate || 0,
         cost: country.cost,
         score: country.score,
-        timestamp: new Date()
+        timestamp: now.toISOString()
       },
       read: false
     });
-    await adminNotification.save({ session });
 
     // Create notification for user
-    const userNotification = new Notification({
-      userId: user._id,
+    await addNotification({
+      userId: userId,
       type: 'purchase_success',
       title: 'Purchase Successful!',
-      message: `You've successfully purchased ${country.name} with a mining rate of ${country.miningRate || 0} coins/hour`,
+      message: `You've successfully purchased ${country.name} with a mining rate of ${country.miningRate || 0} coins/minute`,
       data: {
-        countryId: country._id,
+        countryId: countryId,
         countryName: country.name,
         miningRate: country.miningRate || 0,
         cost: country.cost,
         score: country.score,
-        timestamp: new Date()
+        timestamp: now.toISOString()
       },
       read: false
     });
-    await userNotification.save({ session });
 
     // Emit socket events
-    io.emit('country-updated', country);
-    io.emit('user-updated', user);
-    io.emit('notification', { 
-      userId: 'admin',
-      notification: adminNotification 
-    });
-    io.to(user._id.toString()).emit('notification', { 
-      userId: user._id,
-      notification: userNotification 
-    });
-
-    await session.commitTransaction();
-    session.endSession();
-
+    const updatedCountry = await findCountryById(countryId);
+    const updatedUser = await findUserById(userId);
+    
+    io.emit('country-updated', updatedCountry);
+    io.emit('user-updated', updatedUser);
+    
     res.json({
       success: true,
       message: `Successfully purchased ${country.name}`,
-      country,
       user: {
-        id: user._id,
-        username: user.username,
-        coins: user.coins,
-        score: user.score
+        coins: updatedUser.coins,
+        score: updatedUser.score
       },
-      notification: userNotification
+      country: {
+        id: countryId,
+        name: updatedCountry.name,
+        owner: userId,
+        miningRate: updatedCountry.miningRate || 0
+      }
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
     console.error('Buy country error:', error);
-    res.status(500).json({ error: 'Failed to purchase country' });
+    res.status(500).json({ error: 'Failed to purchase country', details: error.message });
   }
 });
 
