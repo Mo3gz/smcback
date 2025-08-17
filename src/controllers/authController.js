@@ -147,17 +147,19 @@ exports.getCurrentUser = async (req, res) => {
 
 exports.getScoreboard = async (req, res) => {
   try {
-    const users = await User.getLeaderboard(50); // Get more users to include admins
+    const users = await User.getLeaderboard(50); // Get users
     
-    // Map to include relevant fields for the scoreboard, including role
-    const scoreboard = users.map(user => ({
-      id: user.id,
-      username: user.username,
-      teamName: user.teamName || user.username, // Fallback to username if no teamName
-      score: user.score || 0,
-      coins: user.coins || 0,
-      role: user.role || 'user' // Include role for filtering
-    }));
+    // Filter out admins and map to include relevant fields for the scoreboard
+    const scoreboard = users
+      .filter(user => user.role !== 'admin') // Exclude admins
+      .map(user => ({
+        id: user.id,
+        username: user.username,
+        teamName: user.teamName || user.username, // Fallback to username if no teamName
+        score: user.score || 0,
+        coins: user.coins || 0,
+        role: user.role || 'user' // Include role for consistency
+      }));
     
     res.json(scoreboard);
   } catch (error) {

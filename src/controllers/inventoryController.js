@@ -116,7 +116,13 @@ exports.useItem = async (req, res) => {
           console.log('❌ Target user not found:', targetUserId);
           return res.status(404).json({ error: 'Target user not found' });
         }
-        console.log('🎯 Target user found:', { id: targetUser.id, teamName: targetUser.teamName });
+        console.log('🎯 Target user found:', { id: targetUser.id, teamName: targetUser.teamName, role: targetUser.role });
+
+        // Prevent targeting admins
+        if (targetUser.role === 'admin') {
+          console.log('❌ Cannot target admin user');
+          return res.status(400).json({ error: 'Cannot target admin users' });
+        }
 
         // Handle specific attack cards
         if (item.name === 'ana-el-7aramy') {
@@ -152,7 +158,7 @@ exports.useItem = async (req, res) => {
               Notification.create({
                 userId: targetUserId,
                 type: 'item-used-against',
-                message: `${user.teamName} used ${item.name} and stole ${coinsToSteal} of your coins!`,
+                message: `${user.teamName || user.username} used ${item.name} and stole ${coinsToSteal} of your coins!`,
                 read: false
               })
             ]);
@@ -166,7 +172,7 @@ exports.useItem = async (req, res) => {
               Notification.create({
                 userId,
                 type: 'item-used',
-                message: `You used ${item.name} against ${targetUser.teamName}: ${item.effect}`,
+                message: `You used ${item.name} against ${targetUser.teamName || targetUser.username}: ${item.effect}`,
                 read: false
               }),
               Notification.create({
@@ -195,7 +201,13 @@ exports.useItem = async (req, res) => {
           console.log('❌ Alliance target not found:', targetUserId);
           return res.status(404).json({ error: 'Target user not found' });
         }
-        console.log('🤝 Alliance target found:', { id: allianceTarget.id, teamName: allianceTarget.teamName });
+        console.log('🤝 Alliance target found:', { id: allianceTarget.id, teamName: allianceTarget.teamName, role: allianceTarget.role });
+
+        // Prevent targeting admins
+        if (allianceTarget.role === 'admin') {
+          console.log('❌ Cannot target admin user for alliance');
+          return res.status(400).json({ error: 'Cannot target admin users' });
+        }
 
         // Create notifications for alliance
         try {
