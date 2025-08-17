@@ -1,4 +1,4 @@
-const { getDB } = require('../../database/connection');
+const { getDB } = require('../database/connection');
 
 class BaseModel {
   constructor(collectionName) {
