@@ -11,6 +11,82 @@ const config = require('./config');
 const app = express();
 const server = http.createServer(app);
 
+// CORS middleware - MUST be applied before any routes
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowed list (exact match)
+    if (config.cors.allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS allowed: ${origin}`);
+      return callback(null, true);
+    }
+    
+    // Check for development environment
+    if (config.app.nodeEnv === 'development') {
+      console.log(`✅ CORS allowed (dev): ${origin}`);
+      return callback(null, true);
+    }
+    
+    // Check for exact domain match (remove trailing slash for comparison)
+    const cleanOrigin = origin.replace(/\/$/, '');
+    const isExactMatch = config.cors.allowedOrigins.some(allowedOrigin => {
+      const cleanAllowed = allowedOrigin.replace(/\/$/, '');
+      return cleanOrigin === cleanAllowed;
+    });
+    
+    if (isExactMatch) {
+      console.log(`✅ CORS allowed (exact match): ${origin}`);
+      return callback(null, true);
+    }
+    
+    // Check for subdomains (e.g., any.netlify.app)
+    const isAllowedSubdomain = config.cors.allowedOrigins.some(allowedOrigin => {
+      if (allowedOrigin.includes('netlify.app') && origin.endsWith('.netlify.app')) {
+        return true;
+      }
+      if (allowedOrigin.includes('railway.app') && origin.endsWith('.railway.app')) {
+        return true;
+      }
+      return false;
+    });
+    
+    if (isAllowedSubdomain) {
+      console.log(`✅ CORS allowed (subdomain): ${origin}`);
+      return callback(null, true);
+    }
+    
+    console.log(`❌ CORS blocked origin: ${origin}`);
+    console.log(`Allowed origins: ${config.cors.allowedOrigins.join(', ')}`);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: config.cors.credentials,
+  methods: config.cors.methods,
+  allowedHeaders: config.cors.allowedHeaders,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
+// Additional CORS headers middleware
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && config.cors.allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', config.cors.methods.join(', '));
+  res.header('Access-Control-Allow-Headers', config.cors.allowedHeaders.join(', '));
+  
+  // Log CORS requests for debugging
+  console.log(`CORS Request: ${req.method} ${req.path} from ${origin}`);
+  
+  next();
+});
+
 // Initialize database connection first
 async function initializeApp() {
   try {
@@ -30,34 +106,55 @@ async function initializeApp() {
     // Initialize Socket.IO with CORS configuration
     const io = socketIo(server, {
       cors: {
-        origin: config.cors.allowedOrigins,
+        origin: (origin, callback) => {
+          // Allow requests with no origin
+          if (!origin) return callback(null, true);
+          
+          // Check if origin is in allowed list
+          if (config.cors.allowedOrigins.includes(origin)) {
+            return callback(null, true);
+          }
+          
+          // Check for exact domain match (remove trailing slash)
+          const cleanOrigin = origin.replace(/\/$/, '');
+          const isExactMatch = config.cors.allowedOrigins.some(allowedOrigin => {
+            const cleanAllowed = allowedOrigin.replace(/\/$/, '');
+            return cleanOrigin === cleanAllowed;
+          });
+          
+          if (isExactMatch) {
+            return callback(null, true);
+          }
+          
+          // Check for subdomains
+          const isAllowedSubdomain = config.cors.allowedOrigins.some(allowedOrigin => {
+            if (allowedOrigin.includes('netlify.app') && origin.endsWith('.netlify.app')) {
+              return true;
+            }
+            if (allowedOrigin.includes('railway.app') && origin.endsWith('.railway.app')) {
+              return true;
+            }
+            return false;
+          });
+          
+          if (isAllowedSubdomain) {
+            return callback(null, true);
+          }
+          
+          console.log(`❌ Socket.io CORS blocked origin: ${origin}`);
+          callback(new Error('Socket.io CORS not allowed'));
+        },
         methods: config.cors.methods,
-        credentials: true
+        credentials: true,
+        allowedHeaders: config.cors.allowedHeaders
       }
     });
 
-        // Initialize Socket.IO
+    // Initialize Socket.IO
     initializeSocket(io);
     app.set('io', io);
 
-    // Middleware
-    app.use(cors({
-      origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-        
-        if (config.cors.allowedOrigins.includes(origin) || 
-            config.app.nodeEnv === 'development') {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
-      },
-      credentials: config.cors.credentials,
-      methods: config.cors.methods,
-      allowedHeaders: config.cors.allowedHeaders
-    }));
-
+    // Other middleware
     app.use(express.json());
     app.use(cookieParser());
     
@@ -74,6 +171,35 @@ async function initializeApp() {
         timestamp: new Date(),
         mongo: isConnected() ? 'connected' : 'disconnected',
         environment: config.app.nodeEnv
+      });
+    });
+
+    // CORS test endpoint
+    app.get('/api/cors-test', (req, res) => {
+      res.json({
+        message: 'CORS is working!',
+        origin: req.headers.origin,
+        timestamp: new Date(),
+        cors: {
+          allowedOrigins: config.cors.allowedOrigins,
+          credentials: config.cors.credentials,
+          methods: config.cors.methods
+        }
+      });
+    });
+
+    // Netlify specific CORS test
+    app.get('/api/netlify-test', (req, res) => {
+      const origin = req.headers.origin;
+      const isAllowed = config.cors.allowedOrigins.includes(origin) || 
+                       config.cors.allowedOrigins.includes(origin.replace(/\/$/, ''));
+      
+      res.json({
+        message: isAllowed ? 'Netlify CORS is working!' : 'Netlify CORS issue detected',
+        origin: origin,
+        isAllowed: isAllowed,
+        allowedOrigins: config.cors.allowedOrigins,
+        timestamp: new Date()
       });
     });
 

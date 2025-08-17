@@ -1,3 +1,5 @@
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 const Notification = require('../models/Notification');
 
 // Track connected users

@@ -13,6 +13,7 @@ const config = {
   cors: {
     allowedOrigins: [
       'https://smcscout.netlify.app',
+      'https://smcscout.netlify.app/',
       'http://localhost:3000',
       'http://localhost:3001',
       'https://localhost:3000',
@@ -21,8 +22,22 @@ const config = {
       'https://smcfront1.vercel.app'
     ],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Cache-Control', 'Pragma', 'Accept', 'Origin', 'x-auth-token']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+    allowedHeaders: [
+      'Content-Type', 
+      'Authorization', 
+      'X-Requested-With', 
+      'Cache-Control', 
+      'Pragma', 
+      'Accept', 
+      'Origin', 
+      'x-auth-token',
+      'Access-Control-Allow-Origin',
+      'Access-Control-Allow-Credentials',
+      'Access-Control-Allow-Methods',
+      'Access-Control-Allow-Headers'
+    ],
+    exposedHeaders: ['Set-Cookie', 'x-auth-token']
   },
   mongo: {
     uri: process.env.MONGODB_URI,
