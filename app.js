@@ -1772,8 +1772,8 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
         const minutesPassed = (now - lastMined) / (1000 * 60);
         
         if (minutesPassed > 0) {
-          // Calculate coins based on per-minute rate (miningRate is per hour, so we divide by 60)
-          const coinsEarned = Math.floor((country.miningRate / 60) * minutesPassed);
+          // Use per-minute rate directly (miningRate is now per minute for testing)
+          const coinsEarned = Math.floor(country.miningRate * minutesPassed);
           
           if (coinsEarned > 0) {
             totalCollected += coinsEarned;
