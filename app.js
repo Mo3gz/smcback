@@ -1594,6 +1594,176 @@ app.get('/api/admin/check', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
+// Collect mined coins for user's countries
+app.post('/api/mining/collect', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await findUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Get all countries owned by the user
+    let ownedCountries = [];
+    if (mongoConnected && db) {
+      ownedCountries = await db.collection('countries').find({ owner: userId }).toArray();
+    } else {
+      ownedCountries = countries.filter(country => country.owner === userId);
+    }
+    
+    let totalCollected = 0;
+    const now = new Date();
+    
+    // Calculate and collect coins from each country
+    for (const country of ownedCountries) {
+      if (country.miningRate > 0 && country.lastMined) {
+        const lastMined = new Date(country.lastMined);
+        const hoursPassed = (now - lastMined) / (1000 * 60 * 60);
+        
+        if (hoursPassed > 0) {
+          const coinsEarned = Math.floor(country.miningRate * hoursPassed);
+          
+          if (coinsEarned > 0) {
+            totalCollected += coinsEarned;
+            
+            // Update country's total mined and last mined time
+            const update = {
+              totalMined: (country.totalMined || 0) + coinsEarned,
+              lastMined: now.toISOString()
+            };
+            
+            if (mongoConnected && db) {
+              await db.collection('countries').updateOne(
+                { id: country.id },
+                { $set: update }
+              );
+            } else {
+              const index = countries.findIndex(c => c.id === country.id);
+              if (index !== -1) {
+                countries[index] = { ...countries[index], ...update };
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Update user's coin balance
+    if (totalCollected > 0) {
+      const newBalance = (user.coins || 0) + totalCollected;
+      
+      if (mongoConnected && db) {
+        await db.collection('users').updateOne(
+          { id: userId },
+          { $set: { coins: newBalance } }
+        );
+      } else {
+        const userIndex = users.findIndex(u => u.id === userId);
+        if (userIndex !== -1) {
+          users[userIndex].coins = newBalance;
+        }
+      }
+      
+      // Add notification
+      const notification = {
+        id: Date.now().toString(),
+        userId,
+        type: 'mining',
+        message: `Collected ${totalCollected} coins from mining`,
+        timestamp: now.toISOString(),
+        read: false
+      };
+      
+      await addNotification(notification);
+      
+      // Notify all clients about the update
+      const updatedUsers = await getAllUsers();
+      const updatedCountries = await getAllCountries();
+      
+      io.emit('scoreboard-update', updatedUsers);
+      io.emit('countries-update', updatedCountries);
+      io.emit('notification', { userId, notification });
+      
+      res.json({
+        success: true,
+        coinsCollected: totalCollected,
+        newBalance: newBalance
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'No coins to collect',
+        coinsCollected: 0,
+        newBalance: user.coins || 0
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error collecting mining rewards:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to collect mining rewards' 
+    });
+  }
+});
+
+// Get mining statistics for user's countries
+app.get('/api/mining/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await findUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Get all countries owned by the user
+    let ownedCountries = [];
+    if (mongoConnected && db) {
+      ownedCountries = await db.collection('countries').find({ owner: userId }).toArray();
+    } else {
+      ownedCountries = countries.filter(country => country.owner === userId);
+    }
+    
+    // Calculate mining stats
+    const now = new Date();
+    const stats = {
+      totalMiningRate: 0,
+      totalMined: 0,
+      estimatedNextHour: 0,
+      countries: []
+    };
+    
+    for (const country of ownedCountries) {
+      stats.totalMiningRate += country.miningRate || 0;
+      stats.totalMined += country.totalMined || 0;
+      
+      // Calculate estimated coins in the next hour
+      if (country.miningRate > 0) {
+        stats.estimatedNextHour += country.miningRate;
+      }
+      
+      stats.countries.push({
+        id: country.id,
+        name: country.name,
+        miningRate: country.miningRate || 0,
+        totalMined: country.totalMined || 0,
+        lastMined: country.lastMined
+      });
+    }
+    
+    res.json({
+      success: true,
+      ...stats
+    });
+    
+  } catch (error) {
+    console.error('Error getting mining stats:', error);
+    res.status(500).json({ error: 'Failed to get mining stats' });
+  }
+});
+
 // Get user notifications
 app.get('/api/notifications', authenticateToken, async (req, res) => {
   try {
