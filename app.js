@@ -561,10 +561,17 @@ function authenticateToken(req, res, next) {
   let token = null;
   const authHeader = req.headers.authorization;
   
+  console.log('🔐 Raw Authorization header:', authHeader);
+  
   // 1. Check Authorization header
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
-    console.log('🔐 Token found in Authorization header');
+    const parts = authHeader.split(' ');
+    if (parts.length === 2) {
+      token = parts[1];
+      console.log('🔐 Token extracted from Authorization header');
+    } else {
+      console.log('⚠️ Malformed Authorization header:', authHeader);
+    }
   } 
   // 2. Check x-auth-token header
   else if (req.headers['x-auth-token']) {
@@ -608,26 +615,37 @@ function authenticateToken(req, res, next) {
   }
   console.log('🔐 Verifying token with JWT_SECRET...');
   console.log('🔐 JWT_SECRET exists:', JWT_SECRET ? 'Yes' : 'No');
-  console.log('🔐 Token preview:', token.substring(0, 20) + '...');
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
-      console.log('❌ Token verification failed:', err.message);
-      console.log('❌ Error details:', err);
-      console.log('🔐 === AUTHENTICATION END (TOKEN INVALID) ===');
-      return res.status(401).json({ 
-        error: 'Invalid token',
-        debug: {
-          tokenError: err.message,
-          tokenPreview: token.substring(0, 20) + '...'
-        }
-      });
-    }
+  console.log('🔐 Token length:', token ? token.length : 'null/undefined');
+  console.log('🔐 Token type:', typeof token);
+  console.log('🔐 Token preview:', token ? `${token.substring(0, 10)}...${token.substring(-10)}` : 'null/undefined');
+  
+  if (!token || typeof token !== 'string') {
+    console.log('❌ Invalid token format - must be a non-empty string');
+    return res.status(401).json({ 
+      error: 'Invalid token format',
+      debug: { tokenType: typeof token }
+    });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
     console.log('✅ Token verified successfully');
     console.log('✅ Decoded user:', JSON.stringify(decoded, null, 2));
     console.log('🔐 === AUTHENTICATION END (SUCCESS) ===');
     req.user = decoded;
-    next();
-  });
+    return next();
+  } catch (err) {
+    console.log('❌ Token verification failed:', err.message);
+    console.log('❌ Error details:', err);
+    console.log('🔐 === AUTHENTICATION END (TOKEN INVALID) ===');
+    return res.status(401).json({ 
+      error: 'Invalid token',
+      debug: {
+        tokenError: err.message,
+        tokenPreview: token ? `${token.substring(0, 10)}...${token.substring(-10)}` : 'null/undefined'
+      }
+    });
+  }
 }
 
 // Enhanced Admin middleware with better debugging
