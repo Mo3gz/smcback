@@ -1887,22 +1887,31 @@ app.get('/api/mining/stats', authenticateToken, async (req, res) => {
     };
     
     for (const country of ownedCountries) {
-      // Convert mining rate from per hour to per minute (divide by 60)
-      const miningRatePerMinute = (country.miningRate || 0) / 60;
+      // Mining rate is already per minute in the database
+      const miningRatePerMinute = country.miningRate || 0;
       stats.totalMiningRate += miningRatePerMinute;
       
-      // Calculate estimated coins in the next minute
-      if (miningRatePerMinute > 0) {
-        stats.estimatedNextMinute += miningRatePerMinute;
+      // Calculate pending coins since last collection
+      let pendingCoins = 0;
+      if (country.lastMined) {
+        const lastMined = new Date(country.lastMined);
+        const minutesPassed = (now - lastMined) / (1000 * 60);
+        pendingCoins = Math.floor(miningRatePerMinute * minutesPassed);
       }
+      
+      // Calculate estimated coins for the next minute
+      stats.estimatedNextMinute += miningRatePerMinute;
       
       stats.countries.push({
         id: country.id,
         name: country.name,
-        miningRate: country.miningRate || 0,
+        miningRate: miningRatePerMinute, // Already in per minute
         totalMined: country.totalMined || 0,
-        lastMined: country.lastMined
+        lastMined: country.lastMined,
+        pendingCoins: pendingCoins
       });
+      
+      stats.totalMined += pendingCoins;
     }
     
     res.json({
