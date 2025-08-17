@@ -1769,10 +1769,11 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
     for (const country of ownedCountries) {
       if (country.miningRate > 0 && country.lastMined) {
         const lastMined = new Date(country.lastMined);
-        const hoursPassed = (now - lastMined) / (1000 * 60 * 60);
+        const minutesPassed = (now - lastMined) / (1000 * 60);
         
-        if (hoursPassed > 0) {
-          const coinsEarned = Math.floor(country.miningRate * hoursPassed);
+        if (minutesPassed > 0) {
+          // Calculate coins based on per-minute rate (miningRate is per hour, so we divide by 60)
+          const coinsEarned = Math.floor((country.miningRate / 60) * minutesPassed);
           
           if (coinsEarned > 0) {
             totalCollected += coinsEarned;
@@ -1881,17 +1882,18 @@ app.get('/api/mining/stats', authenticateToken, async (req, res) => {
     const stats = {
       totalMiningRate: 0,
       totalMined: 0,
-      estimatedNextHour: 0,
+      estimatedNextMinute: 0,
       countries: []
     };
     
     for (const country of ownedCountries) {
-      stats.totalMiningRate += country.miningRate || 0;
-      stats.totalMined += country.totalMined || 0;
+      // Convert mining rate from per hour to per minute (divide by 60)
+      const miningRatePerMinute = (country.miningRate || 0) / 60;
+      stats.totalMiningRate += miningRatePerMinute;
       
-      // Calculate estimated coins in the next hour
-      if (country.miningRate > 0) {
-        stats.estimatedNextHour += country.miningRate;
+      // Calculate estimated coins in the next minute
+      if (miningRatePerMinute > 0) {
+        stats.estimatedNextMinute += miningRatePerMinute;
       }
       
       stats.countries.push({
