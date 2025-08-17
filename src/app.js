@@ -21,6 +21,7 @@ async function initializeApp() {
     // Now import models and routes after DB connection is established
     const { initializeSocket } = require('./sockets');
     const authRoutes = require('./routes/authRoutes');
+    const authController = require('./controllers/authController');
     const countryRoutes = require('./routes/countryRoutes');
     const notificationRoutes = require('./routes/notificationRoutes');
     const inventoryRoutes = require('./routes/inventoryRoutes');
@@ -76,6 +77,9 @@ async function initializeApp() {
     app.use('/api/notifications', notificationRoutes);
     app.use('/api/inventory', inventoryRoutes);
     app.use('/api/admin', adminRoutes);
+    
+    // Scoreboard shortcut route - redirect to auth controller
+    app.get('/api/scoreboard', authController.getScoreboard);
 
     // Error handling middleware
     app.use((err, req, res, next) => {

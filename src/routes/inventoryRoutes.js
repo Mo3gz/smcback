@@ -7,6 +7,7 @@ const { authenticate, requireAdmin } = require('../middleware/auth');
 router.get('/', authenticate, inventoryController.getUserInventory);
 router.post('/use', authenticate, inventoryController.useItem);
 router.post('/spin', authenticate, inventoryController.spinWheel);
+router.post('/promocode/validate', authenticate, inventoryController.validatePromoCode);
 
 // Admin routes
 router.post('/admin/add', authenticate, requireAdmin, inventoryController.addItemToInventory);
