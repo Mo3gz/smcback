@@ -1160,43 +1160,55 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     
     // Map spin types to limitation categories
     const spinCategory = spinType === 'lucky' ? 'lucky' : 
-                        (spinType === 'gamehelper' || spinType === 'challenge' || spinType === 'hightier' || spinType === 'lowtier') ? 'special' : 'regular';
+                        spinType === 'gamehelper' ? 'gamehelper' :
+                        spinType === 'challenge' ? 'challenge' :
+                        spinType === 'hightier' ? 'hightier' :
+                        spinType === 'lowtier' ? 'lowtier' :
+                        spinType === 'random' ? 'random' : 'regular';
     
     const limitation = spinLimitations[spinCategory];
     if (limitation && limitation.enabled) {
       if (spinCounts[spinCategory] >= limitation.limit) {
-        // Check if user has completed all their allowed spins
-        const totalAllowedSpins = Object.values(spinLimitations)
-          .filter(lim => lim.enabled)
-          .reduce((total, lim) => total + lim.limit, 0);
+        // Check if user has completed all their enabled spin types
+        const enabledSpinTypes = Object.entries(spinLimitations)
+          .filter(([type, lim]) => lim.enabled)
+          .map(([type]) => type);
         
-        const totalUsedSpins = Object.values(spinCounts)
-          .reduce((total, count) => total + count, 0);
+        const completedSpinTypes = enabledSpinTypes.filter(type => 
+          (spinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
+        );
         
-        // If user has completed all their allowed spins, reset all counts
-        if (totalUsedSpins >= totalAllowedSpins) {
+        // If user has completed all their enabled spin types, reset all counts
+        if (completedSpinTypes.length === enabledSpinTypes.length) {
           const updatedTeamSettings = {
             ...teamSettings,
             spinCounts: {
               regular: 0,
               lucky: 0,
-              special: 0
+              gamehelper: 0,
+              challenge: 0,
+              hightier: 0,
+              lowtier: 0,
+              random: 0
             }
           };
           
           await updateUserById(req.user.id, { teamSettings: updatedTeamSettings });
-          console.log(`🔄 Reset spin counts for user ${user.teamName} after completing all allowed spins (${totalUsedSpins}/${totalAllowedSpins})`);
+          console.log(`🔄 Reset spin counts for user ${user.teamName} after completing all enabled spin types (${completedSpinTypes.length}/${enabledSpinTypes.length})`);
           
           // Send notification to user that their spins have been reset
           if (io) {
             io.emit('spin-counts-reset', { 
               userId: req.user.id,
-              message: `Congratulations! You've completed all your allowed spins (${totalAllowedSpins} total). Your spin counts have been reset and you can continue spinning.`
+              message: `Congratulations! You've completed all your enabled spin types (${enabledSpinTypes.length} total). Your spin counts have been reset and you can continue spinning.`
             });
           }
         } else {
+          const remainingTypes = enabledSpinTypes.filter(type => 
+            !completedSpinTypes.includes(type)
+          );
           return res.status(400).json({ 
-            error: `Spin limit reached for ${spinCategory} spins. You can only spin ${limitation.limit} times. Complete all your allowed spins to reset.` 
+            error: `Spin limit reached for ${spinCategory} spins. You must complete all your enabled spin types before resetting. Remaining: ${remainingTypes.join(', ')}` 
           });
         }
       }
@@ -1383,22 +1395,23 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       
       await updateUserById(req.user.id, { teamSettings: updatedTeamSettings });
       
-      // Check if this was the last allowed spin
-      const totalAllowedSpins = Object.values(spinLimitations)
-        .filter(lim => lim.enabled)
-        .reduce((total, lim) => total + lim.limit, 0);
+      // Check if this was the last enabled spin type
+      const enabledSpinTypes = Object.entries(spinLimitations)
+        .filter(([type, lim]) => lim.enabled)
+        .map(([type]) => type);
       
-      const totalUsedSpins = Object.values(updatedSpinCounts)
-        .reduce((total, count) => total + count, 0);
+      const completedSpinTypes = enabledSpinTypes.filter(type => 
+        (updatedSpinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
+      );
       
-      if (totalUsedSpins >= totalAllowedSpins) {
-        console.log(`🎉 User ${user.teamName} has completed all their allowed spins!`);
+      if (completedSpinTypes.length === enabledSpinTypes.length) {
+        console.log(`🎉 User ${user.teamName} has completed all their enabled spin types!`);
         
         // Send notification to user that their spins have been reset
         if (io) {
           io.emit('spin-counts-reset', { 
             userId: req.user.id,
-            message: 'All your allowed spins have been completed! Your spin counts have been reset.'
+            message: `Congratulations! You've completed all your enabled spin types (${enabledSpinTypes.length} total). Your spin counts have been reset and you can continue spinning.`
           });
         }
       }
@@ -2719,12 +2732,20 @@ app.get('/api/admin/teams', authenticateToken, requireAdmin, async (req, res) =>
           spinLimitations: {
             regular: { enabled: false, limit: 1 },
             lucky: { enabled: false, limit: 1 },
-            special: { enabled: false, limit: 1 }
+            gamehelper: { enabled: false, limit: 1 },
+            challenge: { enabled: false, limit: 1 },
+            hightier: { enabled: false, limit: 1 },
+            lowtier: { enabled: false, limit: 1 },
+            random: { enabled: false, limit: 1 }
           },
           spinCounts: {
             regular: 0,
             lucky: 0,
-            special: 0
+            gamehelper: 0,
+            challenge: 0,
+            hightier: 0,
+            lowtier: 0,
+            random: 0
           }
         }
       }));
@@ -2762,12 +2783,20 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
       spinLimitations: {
         regular: { enabled: false, limit: 1 },
         lucky: { enabled: false, limit: 1 },
-        special: { enabled: false, limit: 1 }
+        gamehelper: { enabled: false, limit: 1 },
+        challenge: { enabled: false, limit: 1 },
+        hightier: { enabled: false, limit: 1 },
+        lowtier: { enabled: false, limit: 1 },
+        random: { enabled: false, limit: 1 }
       },
       spinCounts: {
         regular: 0,
         lucky: 0,
-        special: 0
+        gamehelper: 0,
+        challenge: 0,
+        hightier: 0,
+        lowtier: 0,
+        random: 0
       }
     };
     
@@ -2821,19 +2850,27 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
     const updatePromises = teamUsers.map(async (user) => {
       try {
         // Initialize default settings if they don't exist
-        const currentSettings = user.teamSettings || {
-          scoreboardVisible: true,
-          spinLimitations: {
-            regular: { enabled: false, limit: 1 },
-            lucky: { enabled: false, limit: 1 },
-            special: { enabled: false, limit: 1 }
-          },
-          spinCounts: {
-            regular: 0,
-            lucky: 0,
-            special: 0
-          }
-        };
+                 const currentSettings = user.teamSettings || {
+           scoreboardVisible: true,
+           spinLimitations: {
+             regular: { enabled: false, limit: 1 },
+             lucky: { enabled: false, limit: 1 },
+             gamehelper: { enabled: false, limit: 1 },
+             challenge: { enabled: false, limit: 1 },
+             hightier: { enabled: false, limit: 1 },
+             lowtier: { enabled: false, limit: 1 },
+             random: { enabled: false, limit: 1 }
+           },
+           spinCounts: {
+             regular: 0,
+             lucky: 0,
+             gamehelper: 0,
+             challenge: 0,
+             hightier: 0,
+             lowtier: 0,
+             random: 0
+           }
+         };
         
         const updatedSettings = {
           ...currentSettings,
