@@ -1155,8 +1155,8 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       score: user.score
     });
 
-    // Only add to inventory if it's NOT an instant action card
-    if (!isInstantAction && randomCard.actionType !== 'admin') {
+    // Add to inventory for admin cards and non-instant cards
+    if (!isInstantAction) {
       const cardToAdd = {
         id: Date.now().toString(),
         name: randomCard.name,
