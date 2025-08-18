@@ -869,17 +869,25 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
     const newScore = user.score + country.score;
     const userId = user.id || user._id;
 
-    // Update user
+    // Calculate new mining rate after buying the country
+    const currentCountries = await getAllCountries();
+    const ownedCountries = currentCountries.filter(c => c.owner === userId);
+    const newMiningRate = ownedCountries.reduce((sum, c) => sum + (c.miningRate || 0), 0) + (country.miningRate || 0);
+
+    // Update user with new coins, score, and mining rate
     await updateUserById(req.user.id, { 
       coins: newCoins, 
-      score: newScore 
+      score: newScore,
+      miningRate: newMiningRate
     });
-    // Emit user-update for this user
+    
+    // Emit user-update for this user with mining rate
     io.to(userId).emit('user-update', {
       id: userId,
       teamName: user.teamName,
       coins: newCoins,
-      score: newScore
+      score: newScore,
+      miningRate: newMiningRate
     });
 
     // Update country
@@ -927,7 +935,8 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       message: `Successfully bought ${country.name}`,
       user: {
         coins: newCoins,
-        score: newScore
+        score: newScore,
+        miningRate: newMiningRate
       }
     });
   } catch (error) {
