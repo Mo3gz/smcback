@@ -118,7 +118,19 @@ let users = [
     coins: 1000,
     score: 0,
     totalMined: 0,
-    lastMined: null
+    lastMined: null,
+    teamSettings: {
+      scoreboardVisible: true,
+      spinLimitations: {
+        lucky: { enabled: true, limit: 1 },
+        gamehelper: { enabled: true, limit: 1 },
+        challenge: { enabled: true, limit: 1 },
+        hightier: { enabled: true, limit: 1 },
+        lowtier: { enabled: true, limit: 1 },
+        random: { enabled: true, limit: 1 }
+      },
+      spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+    }
   },
   {
     id: '2',
@@ -129,7 +141,19 @@ let users = [
     coins: 500,
     score: 0,
     totalMined: 0,
-    lastMined: null
+    lastMined: null,
+    teamSettings: {
+      scoreboardVisible: true,
+      spinLimitations: {
+        lucky: { enabled: true, limit: 1 },
+        gamehelper: { enabled: true, limit: 1 },
+        challenge: { enabled: true, limit: 1 },
+        hightier: { enabled: true, limit: 1 },
+        lowtier: { enabled: true, limit: 1 },
+        random: { enabled: true, limit: 1 }
+      },
+      spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+    }
   },
   {
     id: '3',
@@ -140,7 +164,19 @@ let users = [
     coins: 500,
     score: 0,
     totalMined: 0,
-    lastMined: null
+    lastMined: null,
+    teamSettings: {
+      scoreboardVisible: true,
+      spinLimitations: {
+        lucky: { enabled: true, limit: 1 },
+        gamehelper: { enabled: true, limit: 1 },
+        challenge: { enabled: true, limit: 1 },
+        hightier: { enabled: true, limit: 1 },
+        lowtier: { enabled: true, limit: 1 },
+        random: { enabled: true, limit: 1 }
+      },
+      spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+    }
   }
 ];
 
@@ -218,6 +254,9 @@ async function initializeDefaultData() {
 
     // Migrate existing notifications to ensure they have read field
     await migrateNotifications();
+
+    // Migrate existing users to ensure they have teamSettings
+    await migrateUserTeamSettings();
 
   } catch (error) {
     console.error('❌ Error initializing default data:', error);
@@ -1382,10 +1421,12 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     if (limitation && limitation.enabled) {
       // Get the current spin counts (might have been reset above)
       const currentUser = await findUserById(req.user.id);
-      const currentSpinCounts = currentUser.teamSettings?.spinCounts || { regular: 0, lucky: 0, special: 0 };
+      const currentSpinCounts = currentUser.teamSettings?.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
       
       const updatedSpinCounts = { ...currentSpinCounts };
       updatedSpinCounts[spinCategory] = (updatedSpinCounts[spinCategory] || 0) + 1;
+      
+      console.log(`🔄 Updating spin count for ${spinCategory}: ${currentSpinCounts[spinCategory] || 0} -> ${updatedSpinCounts[spinCategory]}`);
       
       const updatedTeamSettings = {
         ...currentUser.teamSettings,
@@ -1393,6 +1434,14 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       };
       
       await updateUserById(req.user.id, { teamSettings: updatedTeamSettings });
+      
+      // Send updated team settings to the user
+      if (io) {
+        io.emit('user-team-settings-updated', {
+          userId: req.user.id,
+          teamSettings: updatedTeamSettings
+        });
+      }
       
       // Check if this was the last enabled spin type
       const enabledSpinTypes = Object.entries(spinLimitations)
@@ -2276,6 +2325,38 @@ async function migrateNotifications() {
     }
   } catch (error) {
     console.error('❌ Error migrating notifications:', error);
+  }
+}
+
+// Migrate existing users to ensure they have teamSettings
+async function migrateUserTeamSettings() {
+  if (!mongoConnected || !db) return;
+
+  try {
+    const defaultTeamSettings = {
+      scoreboardVisible: true,
+      spinLimitations: {
+        lucky: { enabled: true, limit: 1 },
+        gamehelper: { enabled: true, limit: 1 },
+        challenge: { enabled: true, limit: 1 },
+        hightier: { enabled: true, limit: 1 },
+        lowtier: { enabled: true, limit: 1 },
+        random: { enabled: true, limit: 1 }
+      },
+      spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+    };
+
+    // Update users that don't have teamSettings
+    const result = await db.collection('users').updateMany(
+      { teamSettings: { $exists: false } },
+      { $set: { teamSettings: defaultTeamSettings } }
+    );
+    
+    if (result.modifiedCount > 0) {
+      console.log(`✅ Migrated ${result.modifiedCount} users to include teamSettings`);
+    }
+  } catch (error) {
+    console.error('❌ Error migrating user team settings:', error);
   }
 }
 
