@@ -1820,6 +1820,17 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// Simple admin test endpoint (no authentication required)
+app.get('/api/admin/test-public', (req, res) => {
+  console.log('🔧 Public admin test endpoint called');
+  res.json({ 
+    message: 'Public admin endpoint works!', 
+    timestamp: new Date().toISOString(),
+    gameSettings: gameSettings,
+    note: 'This endpoint does not require authentication'
+  });
+});
+
 // Health check endpoint (no authentication required)
 app.get('/api/health', (req, res) => {
   console.log('🏥 Health check endpoint called');
@@ -2198,11 +2209,13 @@ io.on('connection', (socket) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
+  console.log('🏥 Health check endpoint called');
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
     mongoConnected,
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    gameSettings: gameSettings
   });
 });
 
