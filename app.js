@@ -1217,10 +1217,10 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     let cost = 50;
     switch(spinType) {
       case 'lucky': cost = 50; break;
-      case 'gamehelper': cost = 75; break;
-      case 'challenge': cost = 100; break;
-      case 'hightier': cost = 150; break;
-      case 'lowtier': cost = 25; break;
+          case 'gamehelper': cost = 50; break;
+    case 'challenge': cost = 50; break;
+    case 'hightier': cost = 50; break;
+    case 'lowtier': cost = 50; break;
       case 'random': cost = 30; break;
       default: cost = 50;
     }
