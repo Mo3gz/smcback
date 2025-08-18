@@ -1445,8 +1445,19 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     }
     
     // Check for automatic reset after EVERY successful spin (regardless of limitations)
-    const currentUser = await findUserById(req.user.id);
-    const currentSpinCounts = currentUser.teamSettings?.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
+    let updatedSpinCounts = {};
+    
+    if (limitation && limitation.enabled) {
+      // Use the updated counts that include the current spin
+      const currentUser = await findUserById(req.user.id);
+      const currentSpinCounts = currentUser.teamSettings?.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
+      updatedSpinCounts = { ...currentSpinCounts };
+      updatedSpinCounts[spinCategory] = (updatedSpinCounts[spinCategory] || 0) + 1;
+    } else {
+      // If no limitations, just get current counts
+      const currentUser = await findUserById(req.user.id);
+      updatedSpinCounts = currentUser.teamSettings?.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
+    }
     
     // Check if this was the last enabled spin type
     const enabledSpinTypes = Object.entries(spinLimitations)
@@ -1454,13 +1465,16 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       .map(([type]) => type);
     
     const completedSpinTypes = enabledSpinTypes.filter(type => 
-      (currentSpinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
+      (updatedSpinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
     );
+    
+    console.log(`🔍 Checking for reset: enabledSpinTypes=${enabledSpinTypes.length}, completedSpinTypes=${completedSpinTypes.length}, updatedSpinCounts=`, updatedSpinCounts);
     
     if (enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length) {
       console.log(`🎉 User ${user.teamName} has completed all their enabled spin types!`);
       
       // Reset all spin counts to 0
+      const currentUser = await findUserById(req.user.id);
       const resetTeamSettings = {
         ...currentUser.teamSettings,
         spinCounts: {
