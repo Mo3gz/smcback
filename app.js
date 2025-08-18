@@ -1207,7 +1207,10 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     
     const limitation = spinLimitations[spinCategory];
     if (limitation && limitation.enabled && limitation.limit > 0) {
-      if (spinCounts[spinCategory] >= limitation.limit) {
+      const currentCount = spinCounts[spinCategory] || 0;
+      
+      // If user has exceeded the current limit, check if they need to complete other spin types first
+      if (currentCount >= limitation.limit) {
         // Check if user has completed all their enabled spin types
         const enabledSpinTypes = Object.entries(spinLimitations)
           .filter(([type, lim]) => lim.enabled && lim.limit > 0)
@@ -1441,6 +1444,52 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
           userId: req.user.id,
           teamSettings: updatedTeamSettings
         });
+      }
+      
+      // Check if this spin exceeded the limit and handle accordingly
+      if (updatedSpinCounts[spinCategory] > limitation.limit) {
+        console.log(`⚠️ User ${user.teamName} exceeded limit for ${spinCategory}: ${updatedSpinCounts[spinCategory]}/${limitation.limit}`);
+        
+        // Check if all enabled spin types are completed
+        const enabledSpinTypes = Object.entries(spinLimitations)
+          .filter(([type, lim]) => lim.enabled && lim.limit > 0)
+          .map(([type]) => type);
+        
+        const completedSpinTypes = enabledSpinTypes.filter(type => 
+          (updatedSpinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
+        );
+        
+        // If all enabled spin types are completed, reset all counts
+        if (completedSpinTypes.length === enabledSpinTypes.length) {
+          const resetTeamSettings = {
+            ...updatedTeamSettings,
+            spinCounts: {
+              lucky: 0,
+              gamehelper: 0,
+              challenge: 0,
+              hightier: 0,
+              lowtier: 0,
+              random: 0
+            }
+          };
+          
+          await updateUserById(req.user.id, { teamSettings: resetTeamSettings });
+          console.log(`🔄 Reset all spin counts for user ${user.teamName} after exceeding limit and completing all enabled types`);
+          
+          // Send notification to user that their spins have been reset
+          if (io) {
+            io.emit('spin-counts-reset', { 
+              userId: req.user.id,
+              message: `You've completed all your enabled spin types! Your spin counts have been reset and you can continue spinning.`
+            });
+            
+            // Send updated team settings with reset counts
+            io.emit('user-team-settings-updated', {
+              userId: req.user.id,
+              teamSettings: resetTeamSettings
+            });
+          }
+        }
       }
     }
     
@@ -3095,6 +3144,38 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
         lowtier: 0,
         random: 0
       };
+    } else {
+      // Check if user has exceeded any new limits and handle accordingly
+      const currentSpinCounts = currentSettings.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
+      const newSpinLimitations = updatedSettings.spinLimitations;
+      
+      // Check if any spin type has exceeded the new limit
+      let needsReset = false;
+      const enabledSpinTypes = Object.entries(newSpinLimitations)
+        .filter(([type, lim]) => lim.enabled && lim.limit > 0)
+        .map(([type]) => type);
+      
+      const completedSpinTypes = enabledSpinTypes.filter(type => 
+        (currentSpinCounts[type] || 0) >= (newSpinLimitations[type]?.limit || 1)
+      );
+      
+      // If all enabled spin types are completed, reset all counts
+      if (enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length) {
+        console.log(`🔄 User ${user.teamName} has completed all enabled spin types after limit change, resetting counts`);
+        updatedSettings.spinCounts = {
+          lucky: 0,
+          gamehelper: 0,
+          challenge: 0,
+          hightier: 0,
+          lowtier: 0,
+          random: 0
+        };
+        needsReset = true;
+      }
+      
+      if (needsReset) {
+        console.log(`🔄 Reset spin counts for user ${user.teamName} due to limit changes`);
+      }
     }
     
     console.log(`🔄 Updating team ${user.teamName} with settings:`, updatedSettings);
@@ -3171,6 +3252,38 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
             lowtier: 0,
             random: 0
           };
+        } else {
+          // Check if user has exceeded any new limits and handle accordingly
+          const currentSpinCounts = currentSettings.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
+          const newSpinLimitations = updatedSettings.spinLimitations;
+          
+          // Check if any spin type has exceeded the new limit
+          let needsReset = false;
+          const enabledSpinTypes = Object.entries(newSpinLimitations)
+            .filter(([type, lim]) => lim.enabled && lim.limit > 0)
+            .map(([type]) => type);
+          
+          const completedSpinTypes = enabledSpinTypes.filter(type => 
+            (currentSpinCounts[type] || 0) >= (newSpinLimitations[type]?.limit || 1)
+          );
+          
+          // If all enabled spin types are completed, reset all counts
+          if (enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length) {
+            console.log(`🔄 User ${user.teamName} has completed all enabled spin types after limit change, resetting counts`);
+            updatedSettings.spinCounts = {
+              lucky: 0,
+              gamehelper: 0,
+              challenge: 0,
+              hightier: 0,
+              lowtier: 0,
+              random: 0
+            };
+            needsReset = true;
+          }
+          
+          if (needsReset) {
+            console.log(`🔄 Reset spin counts for user ${user.teamName} due to limit changes`);
+          }
         }
         
         console.log(`🔄 Updating team ${user.teamName} (${user.id || user._id}) with settings:`, updatedSettings);
