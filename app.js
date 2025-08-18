@@ -874,12 +874,11 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
     const ownedCountries = currentCountries.filter(c => c.owner === userId);
     const newMiningRate = ownedCountries.reduce((sum, c) => sum + (c.miningRate || 0), 0) + (country.miningRate || 0);
 
-    // Update user with new coins, score, mining rate, and reset lastMined to prevent immediate collection with new rate
+    // Update user with new coins, score, and mining rate
     await updateUserById(req.user.id, { 
       coins: newCoins, 
       score: newScore,
-      miningRate: newMiningRate,
-      lastMined: new Date().toISOString()
+      miningRate: newMiningRate
     });
     
     // Emit user-update for this user with mining rate
@@ -888,12 +887,14 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       teamName: user.teamName,
       coins: newCoins,
       score: newScore,
-      miningRate: newMiningRate,
-      lastMined: new Date().toISOString()
+      miningRate: newMiningRate
     });
 
-    // Update country
-    await updateCountryById(countryId, { owner: userId });
+    // Update country with ownership and mining start time
+    await updateCountryById(countryId, { 
+      owner: userId,
+      lastMined: new Date().toISOString()
+    });
 
     // Create notification for the country purchase
     const notification = {
@@ -2076,41 +2077,62 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const miningInfo = await getUserMiningInfo(req.user.id);
-    if (!miningInfo) {
-      return res.status(404).json({ error: 'Mining info not found' });
-    }
+    // Get all countries owned by the user
+    const allCountries = await getAllCountries();
+    const ownedCountries = allCountries.filter(country => country.owner === req.user.id);
 
-    if (miningInfo.miningRate === 0) {
+    if (ownedCountries.length === 0) {
       return res.status(400).json({ error: 'You need to own countries to mine coins' });
     }
 
     const now = new Date();
-    const lastMined = user.lastMined ? new Date(user.lastMined) : null;
-    
-    let earned = 0;
-    if (lastMined) {
-      const elapsedMinutes = Math.floor((now - lastMined) / (1000 * 60));
-      earned = Math.floor((elapsedMinutes * miningInfo.miningRate) / 60);
-    } else {
-      // First time mining, give a small bonus
-      earned = Math.floor(miningInfo.miningRate / 60);
+    let totalEarned = 0;
+    const countriesWithEarnings = [];
+
+    // Calculate earnings for each country individually
+    for (const country of ownedCountries) {
+      const countryLastMined = country.lastMined ? new Date(country.lastMined) : null;
+      let countryEarned = 0;
+
+      if (countryLastMined) {
+        const elapsedMinutes = Math.floor((now - countryLastMined) / (1000 * 60));
+        countryEarned = Math.floor((elapsedMinutes * (country.miningRate || 0)) / 60);
+      } else {
+        // First time mining for this country, give a small bonus
+        countryEarned = Math.floor((country.miningRate || 0) / 60);
+      }
+
+      if (countryEarned > 0) {
+        totalEarned += countryEarned;
+        countriesWithEarnings.push({
+          countryId: country.id,
+          countryName: country.name,
+          earned: countryEarned,
+          miningRate: country.miningRate || 0
+        });
+
+        // Update this country's lastMined timestamp
+        await updateCountryById(country.id, { lastMined: now.toISOString() });
+      }
     }
 
-    if (earned <= 0) {
+    if (totalEarned <= 0) {
       return res.status(400).json({ 
-        error: 'Not enough time has passed since last collection',
-        nextCollection: lastMined ? new Date(lastMined.getTime() + (60 * 1000 * 60 / miningInfo.miningRate)) : now
+        error: 'Not enough time has passed since last collection for any countries',
+        ownedCountries: ownedCountries.map(c => ({
+          name: c.name,
+          lastMined: c.lastMined,
+          miningRate: c.miningRate || 0
+        }))
       });
     }
 
     // Update user data
-    const newTotalMined = (user.totalMined || 0) + earned;
-    const newCoins = user.coins + earned;
+    const newTotalMined = (user.totalMined || 0) + totalEarned;
+    const newCoins = user.coins + totalEarned;
     
     await updateUserById(req.user.id, {
       totalMined: newTotalMined,
-      lastMined: now.toISOString(),
       coins: newCoins
     });
 
@@ -2120,22 +2142,26 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
       teamName: user.teamName,
       coins: newCoins,
       score: user.score,
-      totalMined: newTotalMined,
-      lastMined: now.toISOString()
+      totalMined: newTotalMined
     });
 
-    // Create user notification
+    // Create user notification with breakdown
+    const breakdownMessage = countriesWithEarnings.map(c => 
+      `${c.countryName}: ${c.earned} coins`
+    ).join(', ');
+
     const userNotification = {
       id: Date.now().toString(),
       userId: req.user.id,
       type: 'mining',
-      message: `You mined ${earned} coins!`,
+      message: `You mined ${totalEarned} coins! (${breakdownMessage})`,
       timestamp: now.toISOString(),
       read: false,
       recipientType: 'user',
       metadata: {
-        earned,
-        miningRate: miningInfo.miningRate
+        totalEarned,
+        countriesWithEarnings,
+        collectionTime: now.toISOString()
       }
     };
     await addNotification(userNotification);
@@ -2147,14 +2173,14 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
       type: 'mining',
       teamId: req.user.id,
       teamName: user.teamName,
-      message: `User ${user.teamName} mined ${earned} coins`,
+      message: `User ${user.teamName} mined ${totalEarned} coins from ${countriesWithEarnings.length} countries`,
       timestamp: now.toISOString(),
       read: false,
       recipientType: 'admin',
       metadata: {
-        earned,
-        miningRate: miningInfo.miningRate,
-        totalMined: newTotalMined
+        totalEarned,
+        totalMined: newTotalMined,
+        countriesWithEarnings
       }
     };
     await addNotification(adminNotification);
@@ -2165,11 +2191,11 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
     io.emit('scoreboard-update', updatedUsers);
 
     res.json({
-      message: `Successfully mined ${earned} coins!`,
-      earned,
+      message: `Successfully mined ${totalEarned} coins from ${countriesWithEarnings.length} countries!`,
+      earned: totalEarned,
       totalMined: newTotalMined,
-      lastMined: now.toISOString(),
-      newCoins
+      newCoins,
+      countriesWithEarnings
     });
   } catch (error) {
     console.error('Collect mining error:', error);
