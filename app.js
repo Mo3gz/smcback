@@ -1165,9 +1165,40 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     const limitation = spinLimitations[spinCategory];
     if (limitation && limitation.enabled) {
       if (spinCounts[spinCategory] >= limitation.limit) {
-        return res.status(400).json({ 
-          error: `Spin limit reached for ${spinCategory} spins. You can only spin ${limitation.limit} times.` 
-        });
+        // Check if user has completed all their allowed spins
+        const totalAllowedSpins = Object.values(spinLimitations)
+          .filter(lim => lim.enabled)
+          .reduce((total, lim) => total + lim.limit, 0);
+        
+        const totalUsedSpins = Object.values(spinCounts)
+          .reduce((total, count) => total + count, 0);
+        
+        // If user has completed all their allowed spins, reset all counts
+        if (totalUsedSpins >= totalAllowedSpins) {
+          const updatedTeamSettings = {
+            ...teamSettings,
+            spinCounts: {
+              regular: 0,
+              lucky: 0,
+              special: 0
+            }
+          };
+          
+          await updateUserById(req.user.id, { teamSettings: updatedTeamSettings });
+          console.log(`🔄 Reset spin counts for user ${user.teamName} after completing all allowed spins (${totalUsedSpins}/${totalAllowedSpins})`);
+          
+          // Send notification to user that their spins have been reset
+          if (io) {
+            io.emit('spin-counts-reset', { 
+              userId: req.user.id,
+              message: `Congratulations! You've completed all your allowed spins (${totalAllowedSpins} total). Your spin counts have been reset and you can continue spinning.`
+            });
+          }
+        } else {
+          return res.status(400).json({ 
+            error: `Spin limit reached for ${spinCategory} spins. You can only spin ${limitation.limit} times. Complete all your allowed spins to reset.` 
+          });
+        }
       }
     }
     
@@ -1338,15 +1369,39 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     // Update spin counts for team limitations
     if (limitation && limitation.enabled) {
-      const updatedSpinCounts = { ...spinCounts };
+      // Get the current spin counts (might have been reset above)
+      const currentUser = await findUserById(req.user.id);
+      const currentSpinCounts = currentUser.teamSettings?.spinCounts || { regular: 0, lucky: 0, special: 0 };
+      
+      const updatedSpinCounts = { ...currentSpinCounts };
       updatedSpinCounts[spinCategory] = (updatedSpinCounts[spinCategory] || 0) + 1;
       
       const updatedTeamSettings = {
-        ...teamSettings,
+        ...currentUser.teamSettings,
         spinCounts: updatedSpinCounts
       };
       
       await updateUserById(req.user.id, { teamSettings: updatedTeamSettings });
+      
+      // Check if this was the last allowed spin
+      const totalAllowedSpins = Object.values(spinLimitations)
+        .filter(lim => lim.enabled)
+        .reduce((total, lim) => total + lim.limit, 0);
+      
+      const totalUsedSpins = Object.values(updatedSpinCounts)
+        .reduce((total, count) => total + count, 0);
+      
+      if (totalUsedSpins >= totalAllowedSpins) {
+        console.log(`🎉 User ${user.teamName} has completed all their allowed spins!`);
+        
+        // Send notification to user that their spins have been reset
+        if (io) {
+          io.emit('spin-counts-reset', { 
+            userId: req.user.id,
+            message: 'All your allowed spins have been completed! Your spin counts have been reset.'
+          });
+        }
+      }
     }
 
     // Emit scoreboard update
