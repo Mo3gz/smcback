@@ -1631,23 +1631,7 @@ app.post('/api/admin/score', authenticateToken, requireAdmin, async (req, res) =
   }
 });
 
-// Add route to check admin status
-app.get('/api/admin/check', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    res.json({ 
-      message: 'Admin access confirmed',
-      user: {
-        id: req.user.id,
-        username: req.user.username,
-        role: req.user.role,
-        teamName: req.user.teamName
-      }
-    });
-  } catch (error) {
-    console.error('Admin check error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+
 
 // Get user notifications
 app.get('/api/notifications', authenticateToken, async (req, res) => {
@@ -1736,16 +1720,7 @@ app.get('/api/debug/notifications/:userId', authenticateToken, requireAdmin, asy
   }
 });
 
-// Admin: Get all notifications (for admin dashboard)
-app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const notifications = await getAllNotifications();
-    res.json(notifications);
-  } catch (error) {
-    console.error('Get all notifications error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+
 
 // Admin: Delete old notifications (cleanup)
 app.delete('/api/admin/notifications/cleanup', authenticateToken, requireAdmin, async (req, res) => {
