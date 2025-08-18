@@ -1624,7 +1624,7 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
     // Find the card definition to get its properties
     let cardDefinition = null;
     try {
-      const cardsList = getCardsByType(cardType === 'random' ? 'luck' : cardType);
+      const cardsList = getCardsByType(cardType === 'random' ? 'lucky' : cardType);
       cardDefinition = cardsList.find(c => c.name === cardName);
     } catch (e) {
       console.error('Error finding card definition:', e);
@@ -2405,7 +2405,13 @@ let countryVisibilitySettings = {};
 
 // Helper function to get available games
 function getAvailableGames() {
-  const availableGames = Object.keys(gameSettings).filter(game => gameSettings[game].enabled);
+  const availableGames = Object.keys(gameSettings)
+    .filter(gameId => gameSettings[gameId].enabled)
+    .map(gameId => ({
+      id: gameId,
+      name: gameSettings[gameId].name,
+      enabled: gameSettings[gameId].enabled
+    }));
   return availableGames;
 }
 
@@ -3040,9 +3046,46 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
       io.emit('all-teams-settings-updated', { scoreboardVisible, spinLimitations, resetSpinCounts });
       // Emit to all users for their individual team settings
       teamUsers.forEach(user => {
+        const userSettings = user.teamSettings || {
+          scoreboardVisible: true,
+          spinLimitations: {
+            lucky: { enabled: false, limit: 1 },
+            gamehelper: { enabled: false, limit: 1 },
+            challenge: { enabled: false, limit: 1 },
+            hightier: { enabled: false, limit: 1 },
+            lowtier: { enabled: false, limit: 1 },
+            random: { enabled: false, limit: 1 }
+          },
+          spinCounts: {
+            lucky: 0,
+            gamehelper: 0,
+            challenge: 0,
+            hightier: 0,
+            lowtier: 0,
+            random: 0
+          }
+        };
+        
+        const finalSettings = {
+          ...userSettings,
+          scoreboardVisible: scoreboardVisible !== undefined ? scoreboardVisible : userSettings.scoreboardVisible,
+          spinLimitations: spinLimitations || userSettings.spinLimitations
+        };
+        
+        if (resetSpinCounts) {
+          finalSettings.spinCounts = {
+            lucky: 0,
+            gamehelper: 0,
+            challenge: 0,
+            hightier: 0,
+            lowtier: 0,
+            random: 0
+          };
+        }
+        
         io.emit('user-team-settings-updated', { 
           userId: user.id || user._id, 
-          teamSettings: updatedSettings 
+          teamSettings: finalSettings 
         });
       });
     }
