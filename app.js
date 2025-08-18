@@ -96,16 +96,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(cookieParser());
 
-// Add a simple test route at the very beginning to ensure routing works
-app.get('/api/debug-test', (req, res) => {
-  console.log('🔧 Debug test endpoint called');
-  res.json({ 
-    message: 'Debug test endpoint works!',
-    timestamp: new Date().toISOString(),
-    requestUrl: req.url,
-    requestMethod: req.method
-  });
-});
+
 
 // Handle preflight requests
 app.options('*', (req, res) => {
@@ -1896,27 +1887,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Simple test endpoint for debugging
-app.get('/api/test', (req, res) => {
-  console.log('🧪 Test endpoint called');
-  res.json({ 
-    message: 'Test endpoint works!',
-    timestamp: new Date().toISOString(),
-    requestUrl: req.url,
-    requestMethod: req.method
-  });
-});
 
-// Admin test endpoint without authentication
-app.get('/api/admin-test', (req, res) => {
-  console.log('🧪 Admin test endpoint called (no auth)');
-  res.json({ 
-    message: 'Admin test endpoint works!',
-    timestamp: new Date().toISOString(),
-    requestUrl: req.url,
-    requestMethod: req.method
-  });
-});
 
 // Debug route to test admin login
 app.post('/api/debug/admin-test', async (req, res) => {
@@ -2564,12 +2535,6 @@ app.post('/api/admin/games/reset', authenticateToken, requireAdmin, async (req, 
 app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('🎮 Admin games endpoint called');
-    console.log('🎮 Request URL:', req.url);
-    console.log('🎮 Request method:', req.method);
-    console.log('🎮 User:', req.user);
-    console.log('🎮 Current gameSettings:', gameSettings);
-    console.log('🎮 gameSettings type:', typeof gameSettings);
-    console.log('🎮 gameSettings keys:', Object.keys(gameSettings));
     res.json(gameSettings);
   } catch (error) {
     console.error('Get game settings error:', error);
@@ -2577,109 +2542,15 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
-// Alternative games endpoint (without authentication for testing)
-app.get('/api/admin/games-alt', async (req, res) => {
-  try {
-    console.log('🎮 Admin games alt endpoint called (no auth)');
-    console.log('🎮 Request URL:', req.url);
-    console.log('🎮 Request method:', req.method);
-    console.log('🎮 Request headers:', req.headers);
-    console.log('🎮 Current gameSettings:', gameSettings);
-    res.json({
-      message: 'Games alt endpoint works!',
-      gameSettings: gameSettings,
-      timestamp: new Date().toISOString(),
-      requestUrl: req.url,
-      requestMethod: req.method
-    });
-  } catch (error) {
-    console.error('Get game settings alt error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
-// Test endpoint to check if admin routes work at all (no middleware)
-app.get('/api/admin-test-simple', (req, res) => {
-  try {
-    console.log('🎮 Admin test simple endpoint called');
-    console.log('🎮 Request URL:', req.url);
-    console.log('🎮 Request method:', req.method);
-    console.log('🎮 Request headers:', req.headers);
-    res.json({
-      message: 'Admin test simple endpoint works!',
-      timestamp: new Date().toISOString(),
-      requestUrl: req.url,
-      requestMethod: req.method
-    });
-  } catch (error) {
-    console.error('Admin test simple error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
-// Get game settings (without authentication - for testing)
-app.get('/api/admin/games-test', async (req, res) => {
-  try {
-    console.log('🎮 Admin games test endpoint called (no auth)');
-    console.log('🎮 Request URL:', req.url);
-    console.log('🎮 Request method:', req.method);
-    console.log('🎮 Request headers:', req.headers);
-    console.log('🎮 Current gameSettings:', gameSettings);
-    res.json({
-      message: 'Games test endpoint works!',
-      gameSettings: gameSettings,
-      timestamp: new Date().toISOString(),
-      requestUrl: req.url,
-      requestMethod: req.method
-    });
-  } catch (error) {
-    console.error('Get game settings test error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
-// Simple test route to check if admin routes work at all
-app.get('/api/admin/test-simple-route', async (req, res) => {
-  try {
-    console.log('🎮 Simple admin route test called');
-    res.json({
-      message: 'Simple admin route works!',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Simple admin route test error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
-// Simple test admin endpoint
-app.get('/api/admin/test-simple', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    console.log('🧪 Simple admin test endpoint called');
-    res.json({ 
-      message: 'Simple admin endpoint works!',
-      timestamp: new Date().toISOString(),
-      gameSettings: gameSettings
-    });
-  } catch (error) {
-    console.error('Simple admin test error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
-// Even simpler test endpoint (no variables)
-app.get('/api/admin/test-basic', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    console.log('🔧 Basic admin test endpoint called');
-    res.json({ 
-      message: 'Basic admin endpoint works!',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Basic admin test error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+
+
+
+
 
 // Get available games for users (moved after admin routes to avoid conflicts)
 app.get('/api/games/available', authenticateToken, async (req, res) => {
@@ -3167,48 +3038,10 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
 // Catch-all route for unmatched paths
 app.use('*', (req, res) => {
   console.log(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
-  console.log(`❌ Request headers:`, req.headers);
-  console.log(`❌ Request body:`, req.body);
-  
-  // Get all registered routes
-  const allRoutes = app._router.stack
-    .filter(r => r.route)
-    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`);
-  
-  console.log(`🔍 Total routes registered: ${allRoutes.length}`);
-  console.log(`🔍 All routes:`, allRoutes);
-  
-  // Check specifically for admin routes
-  const adminRoutes = allRoutes.filter(route => route.includes('/admin'));
-  console.log(`🔍 Admin routes:`, adminRoutes);
-  
-  // Check specifically for games routes
-  const gamesRoutes = allRoutes.filter(route => route.includes('/games'));
-  console.log(`🔍 Games routes:`, gamesRoutes);
-  
-  // Check if the specific route exists
-  const requestedRoute = `${req.method.toUpperCase()} ${req.originalUrl}`;
-  const routeExists = allRoutes.includes(requestedRoute);
-  console.log(`🔍 Requested route: ${requestedRoute}`);
-  console.log(`🔍 Route exists: ${routeExists}`);
-  
-  // Check for similar routes
-  const similarRoutes = allRoutes.filter(route => 
-    route.toLowerCase().includes(req.originalUrl.toLowerCase().replace('/api/', ''))
-  );
-  console.log(`🔍 Similar routes:`, similarRoutes);
-  
   res.status(404).json({ 
     error: 'Route not found', 
     method: req.method, 
-    path: req.originalUrl,
-    timestamp: new Date().toISOString(),
-    totalRoutes: allRoutes.length,
-    adminRoutes: adminRoutes,
-    gamesRoutes: gamesRoutes,
-    requestedRoute: requestedRoute,
-    routeExists: routeExists,
-    similarRoutes: similarRoutes
+    path: req.originalUrl
   });
 });
 
@@ -3218,29 +3051,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS Origin: * (Public Access)`);
   console.log(`🌐 Server URL: http://localhost:${PORT}`);
-  
-  // Debug route registration
-  const allRoutes = app._router.stack
-    .filter(r => r.route)
-    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`);
-  
-  console.log(`🔧 Total routes registered: ${allRoutes.length}`);
-  console.log(`🔧 All routes:`, allRoutes);
-  
-  // Check specifically for admin routes
-  const adminRoutes = allRoutes.filter(route => route.includes('/admin'));
-  console.log(`🔧 Admin routes:`, adminRoutes);
-  
-  // Check specifically for games routes
-  const gamesRoutes = allRoutes.filter(route => route.includes('/games'));
-  console.log(`🔧 Games routes:`, gamesRoutes);
-  
-  // Check if the specific route exists
-  const gamesRoute = allRoutes.find(route => route.includes('/api/admin/games'));
-  console.log(`🔧 /api/admin/games route exists:`, !!gamesRoute);
-  
-  // Test specific routes
-  console.log(`🔧 /api/admin/games route:`, gamesRoute);
-  console.log(`🔧 /api/admin/test-simple-route route:`, allRoutes.find(route => route.includes('/api/admin/test-simple-route')));
-  console.log(`🔧 /api/admin-test route:`, allRoutes.find(route => route.includes('/api/admin-test')));
 });
