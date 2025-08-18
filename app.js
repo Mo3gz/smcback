@@ -2539,6 +2539,24 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
+// Alternative games endpoint (without authentication for testing)
+app.get('/api/admin/games-alt', async (req, res) => {
+  try {
+    console.log('🎮 Admin games alt endpoint called (no auth)');
+    console.log('🎮 Request URL:', req.url);
+    console.log('🎮 Request method:', req.method);
+    console.log('🎮 Current gameSettings:', gameSettings);
+    res.json({
+      message: 'Games alt endpoint works!',
+      gameSettings: gameSettings,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get game settings alt error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get game settings (without authentication - for testing)
 app.get('/api/admin/games-test', async (req, res) => {
   try {
