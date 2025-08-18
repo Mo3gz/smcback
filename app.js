@@ -1820,6 +1820,17 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// Test endpoint to check if admin routes are accessible
+app.get('/api/admin-test', (req, res) => {
+  console.log('🧪 Admin test endpoint called');
+  res.json({ 
+    message: 'Admin test endpoint works!', 
+    timestamp: new Date().toISOString(),
+    gameSettings: gameSettings,
+    note: 'This endpoint tests if admin routes are accessible'
+  });
+});
+
 // Simple admin test endpoint (no authentication required)
 app.get('/api/admin/test-public', (req, res) => {
   console.log('🔧 Public admin test endpoint called');
@@ -2247,6 +2258,16 @@ app.get('/api/health', (req, res) => {
     mongoConnected,
     environment: process.env.NODE_ENV || 'development',
     gameSettings: gameSettings
+  });
+});
+
+// Simple root endpoint test
+app.get('/', (req, res) => {
+  console.log('🏠 Root endpoint called');
+  res.json({ 
+    message: 'Server is running!', 
+    timestamp: new Date().toISOString(),
+    status: 'ok'
   });
 });
 
@@ -3106,6 +3127,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS Origin: * (Public Access)`);
+  console.log(`🌐 Server URL: http://localhost:${PORT}`);
   
   // Debug route registration
   const allRoutes = app._router.stack
@@ -3126,4 +3148,9 @@ server.listen(PORT, '0.0.0.0', () => {
   // Check if the specific route exists
   const gamesRoute = allRoutes.find(route => route.includes('/api/admin/games'));
   console.log(`🔧 /api/admin/games route exists:`, !!gamesRoute);
+  
+  // Test specific routes
+  console.log(`🔧 /api/admin/games route:`, gamesRoute);
+  console.log(`🔧 /api/admin/test-simple-route route:`, allRoutes.find(route => route.includes('/api/admin/test-simple-route')));
+  console.log(`🔧 /api/admin-test route:`, allRoutes.find(route => route.includes('/api/admin-test')));
 });
