@@ -1831,6 +1831,37 @@ app.get('/api/admin/test-public', (req, res) => {
   });
 });
 
+// Debug endpoint to list all registered routes
+app.get('/api/debug/routes', (req, res) => {
+  console.log('🔍 Debug routes endpoint called');
+  const routes = [];
+  
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      // Routes registered directly on the app
+      const path = middleware.route.path;
+      const methods = Object.keys(middleware.route.methods);
+      routes.push({ path, methods });
+    } else if (middleware.name === 'router') {
+      // Router middleware
+      middleware.handle.stack.forEach((handler) => {
+        if (handler.route) {
+          const path = handler.route.path;
+          const methods = Object.keys(handler.route.methods);
+          routes.push({ path, methods });
+        }
+      });
+    }
+  });
+  
+  res.json({
+    message: 'Available routes',
+    routes: routes.filter(route => route.path.startsWith('/api/')),
+    totalRoutes: routes.length,
+    gameSettings: gameSettings
+  });
+});
+
 // Health check endpoint (no authentication required)
 app.get('/api/health', (req, res) => {
   console.log('🏥 Health check endpoint called');
@@ -2320,20 +2351,32 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
 // Admin toggle games endpoint
 app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    console.log('🎮 Toggle games endpoint called');
+    console.log('🎮 Request body:', req.body);
+    console.log('🎮 User:', req.user);
+    
     const { gameId, enabled } = req.body;
     
     if (!gameId || typeof enabled !== 'boolean') {
+      console.log('🎮 Invalid request:', { gameId, enabled });
       return res.status(400).json({ error: 'Invalid game ID or enabled status' });
     }
     
+    console.log('🎮 Before toggle - gameSettings:', gameSettings);
+    console.log('🎮 Toggling game', gameId, 'to', enabled);
+    
     // Remove the hardcoded limit check to allow dynamic games
     gameSettings[gameId] = enabled;
+    
+    console.log('🎮 After toggle - gameSettings:', gameSettings);
     
     // Save to database
     await saveGameSettings();
     
     // Emit to all clients about game setting change
     io.emit('game-settings-update', gameSettings);
+    
+    console.log('🎮 Toggle successful, sending response');
     
     res.json({ 
       success: true, 
@@ -2462,6 +2505,9 @@ app.post('/api/admin/games/reset', authenticateToken, requireAdmin, async (req, 
 app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('🎮 Admin games endpoint called');
+    console.log('🎮 Request URL:', req.url);
+    console.log('🎮 Request method:', req.method);
+    console.log('🎮 User:', req.user);
     console.log('🎮 Current gameSettings:', gameSettings);
     console.log('🎮 gameSettings type:', typeof gameSettings);
     console.log('🎮 gameSettings keys:', Object.keys(gameSettings));
