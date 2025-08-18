@@ -2383,6 +2383,8 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
   try {
     console.log('🎮 Admin games endpoint called');
     console.log('🎮 Current gameSettings:', gameSettings);
+    console.log('🎮 gameSettings type:', typeof gameSettings);
+    console.log('🎮 gameSettings keys:', Object.keys(gameSettings));
     res.json(gameSettings);
   } catch (error) {
     console.error('Get game settings error:', error);
@@ -2401,6 +2403,20 @@ app.get('/api/admin/test-simple', authenticateToken, requireAdmin, async (req, r
     });
   } catch (error) {
     console.error('Simple admin test error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Even simpler test endpoint (no variables)
+app.get('/api/admin/test-basic', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('🔧 Basic admin test endpoint called');
+    res.json({ 
+      message: 'Basic admin endpoint works!',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Basic admin test error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
