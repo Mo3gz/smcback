@@ -1786,6 +1786,18 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// Health check endpoint (no authentication required)
+app.get('/api/health', (req, res) => {
+  console.log('🏥 Health check endpoint called');
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    gameSettings: gameSettings,
+    mongoConnected: mongoConnected
+  });
+});
+
 // Debug route to test admin login
 app.post('/api/debug/admin-test', async (req, res) => {
   try {
@@ -2859,9 +2871,30 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
   }
 });
 
+// Catch-all route for unmatched paths
+app.use('*', (req, res) => {
+  console.log(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
+  console.log(`🔍 Available routes:`, app._router.stack
+    .filter(r => r.route)
+    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`)
+    .slice(0, 10) // Show first 10 routes
+  );
+  res.status(404).json({ 
+    error: 'Route not found', 
+    method: req.method, 
+    path: req.originalUrl,
+    timestamp: new Date().toISOString()
+  });
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS Origin: * (Public Access)`);
+  console.log(`🔧 Total routes registered: ${app._router.stack.filter(r => r.route).length}`);
+  console.log(`🔧 Admin routes:`, app._router.stack
+    .filter(r => r.route && r.route.path && r.route.path.includes('/admin'))
+    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`)
+  );
 });
