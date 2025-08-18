@@ -2205,7 +2205,17 @@ let countryVisibilitySettings = {};
 
 // Helper function to get available games
 function getAvailableGames() {
-  const availableGames = Object.keys(gameSettings).filter(game => gameSettings[game].enabled);
+  console.log('🎮 getAvailableGames() called');
+  console.log('🎮 gameSettings:', gameSettings);
+  console.log('🎮 Object.keys(gameSettings):', Object.keys(gameSettings));
+  
+  const availableGames = Object.keys(gameSettings).filter(game => {
+    const isEnabled = gameSettings[game] && gameSettings[game].enabled;
+    console.log(`🎮 Game ${game}: enabled = ${isEnabled}`);
+    return isEnabled;
+  });
+  
+  console.log('🎮 Available games result:', availableGames);
   return availableGames;
 }
 
@@ -2590,12 +2600,22 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
 app.get('/api/games/available', authenticateToken, async (req, res) => {
   try {
     console.log('🎮 Available games endpoint called');
+    console.log('🎮 Current gameSettings:', gameSettings);
+    
     const availableGames = getAvailableGames();
+    console.log('🎮 Available games result:', availableGames);
     console.log('🎮 Sending available games to frontend:', availableGames);
+    
+    // Ensure we're sending an array
+    if (!Array.isArray(availableGames)) {
+      console.error('❌ getAvailableGames() did not return an array:', availableGames);
+      return res.status(500).json({ error: 'Invalid games data format' });
+    }
+    
     res.json(availableGames);
   } catch (error) {
-    console.error('Get available games error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Get available games error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
