@@ -2096,7 +2096,10 @@ let countryVisibilitySettings = {};
 
 // Helper function to get available games
 function getAvailableGames() {
-  return Object.keys(gameSettings).filter(game => gameSettings[game]);
+  console.log('🎮 Current gameSettings:', gameSettings);
+  const availableGames = Object.keys(gameSettings).filter(game => gameSettings[game]);
+  console.log('🎮 Available games:', availableGames);
+  return availableGames;
 }
 
 // Helper function to get cards by type
@@ -2424,7 +2427,9 @@ app.get('/api/admin/test-basic', authenticateToken, requireAdmin, async (req, re
 // Get available games for users
 app.get('/api/games/available', authenticateToken, async (req, res) => {
   try {
+    console.log('🎮 Available games endpoint called');
     const availableGames = getAvailableGames();
+    console.log('🎮 Sending available games to frontend:', availableGames);
     res.json(availableGames);
   } catch (error) {
     console.error('Get available games error:', error);
