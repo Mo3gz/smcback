@@ -896,6 +896,54 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       lastMined: new Date().toISOString()
     });
 
+    // Check if user has active Speed Buy challenge
+    const speedBuyTimers = global.speedBuyTimers || {};
+    if (speedBuyTimers[userId]) {
+      const timer = speedBuyTimers[userId];
+      const currentTime = Date.now();
+      
+      // Check if timer is still active
+      if (currentTime < (timer.startTime + timer.duration)) {
+        // Give Speed Buy reward instantly
+        const speedBuyReward = timer.reward;
+        const newCoinsWithReward = newCoins + speedBuyReward;
+        
+        await updateUserById(req.user.id, { 
+          coins: newCoinsWithReward, 
+          score: newScore,
+          miningRate: newMiningRate
+        });
+        
+        // Emit updated user data with Speed Buy reward
+        io.to(userId).emit('user-update', {
+          id: userId,
+          teamName: user.teamName,
+          coins: newCoinsWithReward,
+          score: newScore,
+          miningRate: newMiningRate
+        });
+        
+        // Notify user about Speed Buy completion
+        const speedBuyNotification = {
+          id: Date.now().toString(),
+          userId: userId,
+          type: 'speedbuy-completed',
+          message: `Speed Buy Challenge completed! You earned an additional ${speedBuyReward} coins for buying ${country.name}!`,
+          timestamp: new Date().toISOString(),
+          read: false,
+          recipientType: 'user'
+        };
+        await addNotification(speedBuyNotification);
+        io.to(userId).emit('notification', speedBuyNotification);
+        
+        // Clear the timer
+        delete speedBuyTimers[userId];
+        
+        // Update final coins for response
+        newCoins = newCoinsWithReward;
+      }
+    }
+
     // Create notification for the country purchase
     const notification = {
       id: Date.now().toString(),
@@ -960,7 +1008,7 @@ app.get('/api/inventory', authenticateToken, async (req, res) => {
 
 app.post('/api/cards/use', authenticateToken, async (req, res) => {
   try {
-    const { cardId, selectedTeam, description } = req.body;
+    const { cardId, selectedTeam, selectedGame, description } = req.body;
     const user = await findUserById(req.user.id);
     const inventory = await getUserInventory(req.user.id);
     
@@ -969,7 +1017,63 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Card not found in inventory' });
     }
 
-    // Remove card from inventory
+    // Special handling for borrow card
+    if (card.name === "Borrow coins to buy a country") {
+      // Check if user balance is negative - if so, they can't use the card
+      if (user.coins < 0) {
+        return res.status(400).json({ error: 'Cannot use borrow card when balance is already negative' });
+      }
+      
+      // Check if balance would go below -200
+      if (user.coins < -200) {
+        return res.status(400).json({ error: 'Cannot borrow - balance limit is -200' });
+      }
+    }
+
+    // Special handling for Secret Info card
+    if (card.name === "Secret Info" && selectedGame) {
+      try {
+        const fs = require('fs');
+        const gameInfo = JSON.parse(fs.readFileSync('./game-info.json', 'utf8'));
+        const userTeamKey = user.id.startsWith('team') ? user.id : `team${user.id}`;
+        
+        if (gameInfo.teams[userTeamKey] && gameInfo.teams[userTeamKey].games[selectedGame]) {
+          const gameData = gameInfo.teams[userTeamKey].games[selectedGame];
+          
+          // Remove card from inventory
+          await removeFromUserInventory(req.user.id, cardId);
+          
+          // Send secret info directly to user
+          const secretInfoNotification = {
+            id: Date.now().toString(),
+            userId: req.user.id,
+            type: 'secret-info',
+            message: `Secret Info for Game ${selectedGame}: ${gameData.details}`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            recipientType: 'user',
+            metadata: {
+              game: selectedGame,
+              opponent: gameData.opponent,
+              details: gameData.details
+            }
+          };
+          await addNotification(secretInfoNotification);
+          io.to(req.user.id).emit('notification', secretInfoNotification);
+          
+          return res.json({ 
+            success: true, 
+            message: 'Secret info revealed!',
+            gameData 
+          });
+        }
+      } catch (error) {
+        console.error('Secret info error:', error);
+        return res.status(500).json({ error: 'Failed to get secret info' });
+      }
+    }
+
+    // Remove card from inventory for other cards
     await removeFromUserInventory(req.user.id, cardId);
 
     // Get target team name if selectedTeam is provided
@@ -981,6 +1085,9 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
 
     // Create notification for admin only
     let adminMessage = `Team ${user.teamName} used: ${card.name}`;
+    if (selectedGame) {
+      adminMessage += ` | Game: ${selectedGame}`;
+    }
     if (targetTeamName && targetTeamName !== 'Unknown Team') {
       adminMessage += ` | Target: ${targetTeamName}`;
     }
@@ -996,6 +1103,7 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       teamName: user.teamName,
       cardName: card.name,
       cardType: card.type,
+      selectedGame: selectedGame,
       selectedTeam: targetTeamName, // Store team name instead of ID
       description,
       timestamp: new Date().toISOString(),
@@ -1155,8 +1263,8 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       score: user.score
     });
 
-    // Add to inventory for admin cards and non-instant cards
-    if (!isInstantAction) {
+    // Add to inventory for admin cards and non-instant cards (but not instant challenges like MCQ)
+    if (!isInstantAction && !randomCard.isInstantChallenge) {
       const cardToAdd = {
         id: Date.now().toString(),
         name: randomCard.name,
@@ -1912,6 +2020,20 @@ setInterval(async () => {
   }
 }, 60000); // Check every minute
 
+// Global game settings - admin can toggle games on/off
+let gameSettings = {
+  1: true, 2: true, 3: true, 4: true, 5: true, 6: true,
+  7: true, 8: true, 9: true, 10: true, 11: true, 12: true
+};
+
+// Global country visibility settings - admin can hide/show country ownership
+let countryVisibilitySettings = {};
+
+// Helper function to get available games
+function getAvailableGames() {
+  return Object.keys(gameSettings).filter(game => gameSettings[game]);
+}
+
 // Helper function to get cards by type
 function getCardsByType(spinType) {
   const cards = {
@@ -1924,20 +2046,20 @@ function getCardsByType(spinType) {
       { name: "+50 Coins to random team", type: 'lucky', effect: '+50 coins given to another random team', actionType: 'random_gift' }
     ],
     gamehelper: [
-      { name: "Secret Info", type: 'gamehelper', effect: 'Reveal specific hidden game details', actionType: 'admin', requiresGameSelection: true },
-      { name: "Robin Hood", type: 'gamehelper', effect: 'Steal coins from selected team (+50 to you, -100 to them)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
-      { name: "Avenger", type: 'gamehelper', effect: 'Team up with selected team (+50 for both, or 0 if declined)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
-      { name: "Betrayal", type: 'gamehelper', effect: 'If someone allied against you and you still win, they don\'t get rewards, and you gain +50', actionType: 'admin', requiresGameSelection: true }
+      { name: "Secret Info", type: 'gamehelper', effect: 'Choose game: Instantly reveals opponent & game details', actionType: 'admin', requiresGameSelection: true },
+      { name: "Robin Hood", type: 'gamehelper', effect: 'Choose game & team: Steal 100 coins from them, gain 50 coins', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Avenger", type: 'gamehelper', effect: 'Choose game & team: Alliance proposal (+50 each if accepted)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Betrayal", type: 'gamehelper', effect: 'Choose game: Counter alliance betrayals (+50 if betrayed & win)', actionType: 'admin', requiresGameSelection: true }
     ],
     challenge: [
       { name: "Speed Buy", type: 'challenge', effect: '10 minutes to buy a country (+50 reward)', actionType: 'speed_buy' },
-      { name: "Freeze Player", type: 'challenge', effect: 'Targeted player is frozen (+50 to you)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
-      { name: "Mystery Question", type: 'challenge', effect: 'Spiritual MCQ (+15 if answered correctly, with timer)', actionType: 'mcq' },
-      { name: "Silent Game", type: 'challenge', effect: 'Judge decides outcome (+50 or -30)', actionType: 'admin', requiresGameSelection: true }
+      { name: "Freeze Player", type: 'challenge', effect: 'Choose game & team: Target player frozen (+50 to you)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Mystery Question", type: 'challenge', effect: 'Spiritual MCQ: 10sec timer (+15 correct, -10 wrong)', actionType: 'mcq', isInstantChallenge: true },
+      { name: "Silent Game", type: 'challenge', effect: 'Choose game: Judge decides result (+50 or -30)', actionType: 'admin', requiresGameSelection: true }
     ],
     hightier: [
       { name: "+50 Coins Instantly", type: 'hightier', effect: '+50 coins instantly', actionType: 'instant', coinChange: 50 },
-      { name: "Flip the Fate", type: 'hightier', effect: 'If tied in a game, next game decides both results (win = double win, lose = double loss)', actionType: 'admin', requiresGameSelection: true }
+      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game 1-11: If tied, next game has double consequences', actionType: 'admin', requiresGameSelection: true, maxGame: 11 }
     ],
     lowtier: [
       { name: "+100 Coins Instantly", type: 'lowtier', effect: '+100 coins instantly', actionType: 'instant', coinChange: 100 },
@@ -2044,38 +2166,37 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
     }
     
     const isCorrect = answer === question.correct;
-    let rewardCoins = 0;
+    let rewardCoins = isCorrect ? 15 : -10;
     
-    if (isCorrect) {
-      rewardCoins = 15;
-      const newCoins = user.coins + rewardCoins;
-      await updateUserById(req.user.id, { coins: newCoins });
-      
-      // Emit user update
-      io.to(user.id || user._id).emit('user-update', {
-        id: user.id || user._id,
-        teamName: user.teamName,
-        coins: newCoins,
-        score: user.score
-      });
-      
-      // Notify user
-      const notification = {
-        id: Date.now().toString(),
-        userId: req.user.id,
-        type: 'mcq-reward',
-        message: `Correct answer! You earned ${rewardCoins} coins.`,
-        timestamp: new Date().toISOString(),
-        read: false,
-        recipientType: 'user'
-      };
-      await addNotification(notification);
-      io.to(req.user.id).emit('notification', notification);
-      
-      // Update scoreboard
-      const updatedUsers = await getAllUsers();
-      io.emit('scoreboard-update', updatedUsers);
-    }
+    const newCoins = user.coins + rewardCoins;
+    await updateUserById(req.user.id, { coins: newCoins });
+    
+    // Emit user update
+    io.to(user.id || user._id).emit('user-update', {
+      id: user.id || user._id,
+      teamName: user.teamName,
+      coins: newCoins,
+      score: user.score
+    });
+    
+    // Notify user
+    const notification = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'mcq-reward',
+      message: isCorrect 
+        ? `Correct answer! You earned ${rewardCoins} coins.`
+        : `Wrong answer! You lost ${Math.abs(rewardCoins)} coins.`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'user'
+    };
+    await addNotification(notification);
+    io.to(req.user.id).emit('notification', notification);
+    
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
     
     res.json({ 
       correct: isCorrect, 
@@ -2084,6 +2205,248 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('MCQ answer error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin toggle games endpoint
+app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { gameId, enabled } = req.body;
+    
+    if (!gameId || typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid game ID or enabled status' });
+    }
+    
+    if (gameId < 1 || gameId > 12) {
+      return res.status(400).json({ error: 'Game ID must be between 1 and 12' });
+    }
+    
+    gameSettings[gameId] = enabled;
+    
+    // Emit to all clients about game setting change
+    io.emit('game-settings-update', gameSettings);
+    
+    res.json({ 
+      success: true, 
+      gameId, 
+      enabled, 
+      gameSettings 
+    });
+  } catch (error) {
+    console.error('Toggle game error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get game settings
+app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    res.json(gameSettings);
+  } catch (error) {
+    console.error('Get game settings error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get available games for users
+app.get('/api/games/available', authenticateToken, async (req, res) => {
+  try {
+    const availableGames = getAvailableGames();
+    res.json(availableGames);
+  } catch (error) {
+    console.error('Get available games error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get card usage statistics
+app.get('/api/admin/card-stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const notifications = await getAllNotifications();
+    
+    // Filter card usage notifications
+    const cardUsageNotifications = notifications.filter(n => n.type === 'card-used');
+    
+    // Calculate statistics
+    const cardStats = {};
+    const teamStats = {};
+    const gameStats = {};
+    
+    cardUsageNotifications.forEach(notification => {
+      const cardName = notification.cardName;
+      const teamName = notification.teamName;
+      const selectedGame = notification.selectedGame;
+      
+      // Card usage count
+      if (!cardStats[cardName]) {
+        cardStats[cardName] = { count: 0, type: notification.cardType };
+      }
+      cardStats[cardName].count++;
+      
+      // Team usage count
+      if (!teamStats[teamName]) {
+        teamStats[teamName] = 0;
+      }
+      teamStats[teamName]++;
+      
+      // Game selection count
+      if (selectedGame) {
+        if (!gameStats[selectedGame]) {
+          gameStats[selectedGame] = 0;
+        }
+        gameStats[selectedGame]++;
+      }
+    });
+    
+    // Calculate totals and most popular
+    const totalCardsUsed = cardUsageNotifications.length;
+    const mostUsedCard = Object.keys(cardStats).reduce((a, b) => 
+      cardStats[a].count > cardStats[b].count ? a : b, Object.keys(cardStats)[0]);
+    const mostActiveTeam = Object.keys(teamStats).reduce((a, b) => 
+      teamStats[a] > teamStats[b] ? a : b, Object.keys(teamStats)[0]);
+    const mostSelectedGame = Object.keys(gameStats).reduce((a, b) => 
+      gameStats[a] > gameStats[b] ? a : b, Object.keys(gameStats)[0]);
+    
+    res.json({
+      totalCardsUsed,
+      cardStats,
+      teamStats,
+      gameStats,
+      insights: {
+        mostUsedCard: mostUsedCard ? { name: mostUsedCard, count: cardStats[mostUsedCard].count } : null,
+        mostActiveTeam: mostActiveTeam ? { name: mostActiveTeam, count: teamStats[mostActiveTeam] } : null,
+        mostSelectedGame: mostSelectedGame ? { game: mostSelectedGame, count: gameStats[mostSelectedGame] } : null
+      },
+      recentUsage: cardUsageNotifications.slice(0, 10) // Last 10 card uses
+    });
+  } catch (error) {
+    console.error('Get card stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get all countries with ownership details
+app.get('/api/admin/countries', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const countries = await getAllCountries();
+    const users = await getAllUsers();
+    
+    // Create a map of user IDs to team names for quick lookup
+    const userMap = {};
+    users.forEach(user => {
+      userMap[user.id] = user.teamName;
+    });
+    
+    // Add owner name and visibility info to each country
+    const countriesWithDetails = countries.map(country => ({
+      ...country,
+      ownerName: country.owner ? userMap[country.owner] || 'Unknown' : null,
+      isVisible: countryVisibilitySettings[country.id] !== false // Default to visible
+    }));
+    
+    res.json(countriesWithDetails);
+  } catch (error) {
+    console.error('Get admin countries error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin toggle country visibility
+app.post('/api/admin/countries/visibility', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { countryId, visible } = req.body;
+    
+    if (!countryId || typeof visible !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid country ID or visibility status' });
+    }
+    
+    countryVisibilitySettings[countryId] = visible;
+    
+    // Emit to all clients about country visibility change
+    io.emit('country-visibility-update', { countryId, visible });
+    
+    res.json({ 
+      success: true, 
+      countryId, 
+      visible 
+    });
+  } catch (error) {
+    console.error('Toggle country visibility error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin change country ownership
+app.post('/api/admin/countries/ownership', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { countryId, newOwnerId } = req.body;
+    
+    if (!countryId) {
+      return res.status(400).json({ error: 'Country ID is required' });
+    }
+    
+    const country = await findCountryById(countryId);
+    if (!country) {
+      return res.status(404).json({ error: 'Country not found' });
+    }
+    
+    // Update country ownership
+    await updateCountryById(countryId, { 
+      owner: newOwnerId || null,
+      lastMined: new Date().toISOString()
+    });
+    
+    // If assigning to a new owner, update their mining rate
+    if (newOwnerId) {
+      const newOwner = await findUserById(newOwnerId);
+      if (newOwner) {
+        const newMiningRate = await calculateUserMiningRate(newOwnerId);
+        await updateUserById(newOwnerId, { miningRate: newMiningRate });
+        
+        // Emit user update
+        io.to(newOwnerId).emit('user-update', {
+          id: newOwnerId,
+          teamName: newOwner.teamName,
+          coins: newOwner.coins,
+          score: newOwner.score,
+          miningRate: newMiningRate
+        });
+      }
+    }
+    
+    // If removing from previous owner, update their mining rate
+    if (country.owner && country.owner !== newOwnerId) {
+      const prevOwner = await findUserById(country.owner);
+      if (prevOwner) {
+        const prevMiningRate = await calculateUserMiningRate(country.owner);
+        await updateUserById(country.owner, { miningRate: prevMiningRate });
+        
+        // Emit user update
+        io.to(country.owner).emit('user-update', {
+          id: country.owner,
+          teamName: prevOwner.teamName,
+          coins: prevOwner.coins,
+          score: prevOwner.score,
+          miningRate: prevMiningRate
+        });
+      }
+    }
+    
+    // Emit country update to all clients
+    io.emit('country-update', { countryId, newOwnerId });
+    
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+    
+    res.json({ 
+      success: true, 
+      countryId, 
+      newOwnerId 
+    });
+  } catch (error) {
+    console.error('Change country ownership error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
