@@ -874,11 +874,12 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
     const ownedCountries = currentCountries.filter(c => c.owner === userId);
     const newMiningRate = ownedCountries.reduce((sum, c) => sum + (c.miningRate || 0), 0) + (country.miningRate || 0);
 
-    // Update user with new coins, score, and mining rate
+    // Update user with new coins, score, mining rate, and reset lastMined to prevent immediate collection with new rate
     await updateUserById(req.user.id, { 
       coins: newCoins, 
       score: newScore,
-      miningRate: newMiningRate
+      miningRate: newMiningRate,
+      lastMined: new Date().toISOString()
     });
     
     // Emit user-update for this user with mining rate
@@ -887,7 +888,8 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       teamName: user.teamName,
       coins: newCoins,
       score: newScore,
-      miningRate: newMiningRate
+      miningRate: newMiningRate,
+      lastMined: new Date().toISOString()
     });
 
     // Update country
