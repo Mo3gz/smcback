@@ -2823,6 +2823,11 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
     // Emit socket event for real-time updates
     if (io) {
       io.emit('team-settings-updated', { teamId, settings: updatedSettings });
+      // Also emit to the specific user if they're online
+      io.emit('user-team-settings-updated', { 
+        userId: teamId, 
+        teamSettings: updatedSettings 
+      });
     }
     
     res.json({ success: true, settings: updatedSettings });
@@ -2900,6 +2905,13 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
     // Emit socket event for real-time updates
     if (io) {
       io.emit('all-teams-settings-updated', { scoreboardVisible, spinLimitations, resetSpinCounts });
+      // Emit to all users for their individual team settings
+      teamUsers.forEach(user => {
+        io.emit('user-team-settings-updated', { 
+          userId: user.id || user._id, 
+          teamSettings: updatedSettings 
+        });
+      });
     }
     
     res.json({ success: true, updatedTeams: teamUsers.length });
