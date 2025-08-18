@@ -1776,6 +1776,16 @@ app.get('/api/debug/users', async (req, res) => {
   }
 });
 
+// Simple test endpoint to verify server is working
+app.get('/api/test', (req, res) => {
+  console.log('🧪 Test endpoint called');
+  res.json({ 
+    message: 'Server is working!', 
+    timestamp: new Date().toISOString(),
+    gameSettings: gameSettings
+  });
+});
+
 // Debug route to test admin login
 app.post('/api/debug/admin-test', async (req, res) => {
   try {
@@ -2359,6 +2369,8 @@ app.delete('/api/admin/games/:gameId', authenticateToken, requireAdmin, async (r
 // Get game settings
 app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    console.log('🎮 Admin games endpoint called');
+    console.log('🎮 Current gameSettings:', gameSettings);
     res.json(gameSettings);
   } catch (error) {
     console.error('Get game settings error:', error);
@@ -2380,6 +2392,7 @@ app.get('/api/games/available', authenticateToken, async (req, res) => {
 // Admin get card usage statistics
 app.get('/api/admin/card-stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    console.log('📊 Admin card-stats endpoint called');
     const notifications = await getAllNotifications();
     
     // Filter card usage notifications
@@ -2446,6 +2459,7 @@ app.get('/api/admin/card-stats', authenticateToken, requireAdmin, async (req, re
 // Admin get all countries with ownership details
 app.get('/api/admin/countries', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    console.log('🗺️ Admin countries endpoint called');
     const countries = await getAllCountries();
     const users = await getAllUsers();
     
