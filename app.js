@@ -2320,9 +2320,17 @@ async function loadGameSettings() {
 
   try {
     const settings = await db.collection('gameSettings').findOne({ _id: 'games' });
+    console.log('📝 Database settings found:', settings);
     if (settings && settings.games) {
       gameSettings = settings.games;
-      console.log('✅ Game settings loaded from database');
+      console.log('✅ Game settings loaded from database:', gameSettings);
+      
+      // Validate the loaded settings
+      const availableGames = getAvailableGames();
+      if (availableGames.length === 0) {
+        console.warn('⚠️ Loaded game settings have no enabled games, resetting to defaults...');
+        await resetGameSettings();
+      }
     } else {
       // Initialize default game settings in database
       await saveGameSettings();
@@ -2347,6 +2355,27 @@ async function saveGameSettings() {
   } catch (error) {
     console.error('❌ Error saving game settings:', error);
   }
+}
+
+// Reset game settings to defaults
+async function resetGameSettings() {
+  console.log('🔄 Resetting game settings to defaults...');
+  gameSettings = {
+    1: { enabled: true, name: 'Game 1' },
+    2: { enabled: true, name: 'Game 2' },
+    3: { enabled: true, name: 'Game 3' },
+    4: { enabled: true, name: 'Game 4' },
+    5: { enabled: true, name: 'Game 5' },
+    6: { enabled: true, name: 'Game 6' },
+    7: { enabled: true, name: 'Game 7' },
+    8: { enabled: true, name: 'Game 8' },
+    9: { enabled: true, name: 'Game 9' },
+    10: { enabled: true, name: 'Game 10' },
+    11: { enabled: true, name: 'Game 11' },
+    12: { enabled: true, name: 'Game 12' }
+  };
+  await saveGameSettings();
+  console.log('✅ Game settings reset to defaults');
 }
 
 // Migrate existing notifications to ensure they have read field
@@ -2405,13 +2434,31 @@ let countryVisibilitySettings = {};
 
 // Helper function to get available games
 function getAvailableGames() {
+  console.log('🎮 getAvailableGames called, gameSettings:', gameSettings);
+  
+  // Ensure gameSettings has the correct structure
+  if (!gameSettings || typeof gameSettings !== 'object') {
+    console.warn('🎮 Invalid gameSettings, using defaults');
+    gameSettings = {
+      1: { enabled: true, name: 'Game 1' },
+      2: { enabled: true, name: 'Game 2' },
+      3: { enabled: true, name: 'Game 3' },
+      4: { enabled: true, name: 'Game 4' },
+      5: { enabled: true, name: 'Game 5' },
+      6: { enabled: true, name: 'Game 6' },
+      7: { enabled: true, name: 'Game 7' },
+      8: { enabled: true, name: 'Game 8' },
+      9: { enabled: true, name: 'Game 9' },
+      10: { enabled: true, name: 'Game 10' },
+      11: { enabled: true, name: 'Game 11' },
+      12: { enabled: true, name: 'Game 12' }
+    };
+  }
+  
   const availableGames = Object.keys(gameSettings)
-    .filter(gameId => gameSettings[gameId].enabled)
-    .map(gameId => ({
-      id: gameId,
-      name: gameSettings[gameId].name,
-      enabled: gameSettings[gameId].enabled
-    }));
+    .filter(gameId => gameSettings[gameId] && gameSettings[gameId].enabled)
+    .map(gameId => gameId); // Return just the game IDs as strings
+  console.log('🎮 getAvailableGames result:', availableGames);
   return availableGames;
 }
 
@@ -2771,11 +2818,46 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
 app.get('/api/games/available', authenticateToken, async (req, res) => {
   try {
     console.log('🎮 Available games endpoint called');
+    console.log('🎮 Current gameSettings:', gameSettings);
     const availableGames = getAvailableGames();
     console.log('🎮 Sending available games to frontend:', availableGames);
     res.json(availableGames);
   } catch (error) {
     console.error('Get available games error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug endpoint to check and reset game settings
+app.get('/api/debug/game-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('🔍 Debug game settings endpoint called');
+    console.log('🔍 Current gameSettings:', gameSettings);
+    
+    const availableGames = getAvailableGames();
+    console.log('🔍 Available games count:', availableGames.length);
+    
+    if (availableGames.length === 0) {
+      console.log('🔍 No available games found, resetting to defaults...');
+      await resetGameSettings();
+      const newAvailableGames = getAvailableGames();
+      res.json({
+        message: 'Game settings reset to defaults',
+        previousCount: 0,
+        newCount: newAvailableGames.length,
+        availableGames: newAvailableGames,
+        gameSettings: gameSettings
+      });
+    } else {
+      res.json({
+        message: 'Game settings are correct',
+        availableGamesCount: availableGames.length,
+        availableGames: availableGames,
+        gameSettings: gameSettings
+      });
+    }
+  } catch (error) {
+    console.error('Debug game settings error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
