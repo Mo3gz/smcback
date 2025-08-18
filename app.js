@@ -2106,7 +2106,19 @@ app.get("/api/user", authenticateToken, async (req, res) => {
       coins: user.coins,
       score: user.score,
       totalMined: user.totalMined || 0,
-      lastMined: user.lastMined
+      lastMined: user.lastMined,
+      teamSettings: user.teamSettings || {
+        scoreboardVisible: true,
+        spinLimitations: {
+          lucky: { enabled: true, limit: 1 },
+          gamehelper: { enabled: true, limit: 1 },
+          challenge: { enabled: true, limit: 1 },
+          hightier: { enabled: true, limit: 1 },
+          lowtier: { enabled: true, limit: 1 },
+          random: { enabled: true, limit: 1 }
+        },
+        spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+      }
     });
   } catch (error) {
     console.error("Error fetching user details:", error);
