@@ -2133,7 +2133,8 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
     
     await updateUserById(req.user.id, {
       totalMined: newTotalMined,
-      coins: newCoins
+      coins: newCoins,
+      lastMined: now.toISOString() // Update user's global lastMined for display purposes
     });
 
     // Emit user update
@@ -2142,7 +2143,8 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
       teamName: user.teamName,
       coins: newCoins,
       score: user.score,
-      totalMined: newTotalMined
+      totalMined: newTotalMined,
+      lastMined: now.toISOString()
     });
 
     // Create user notification with breakdown

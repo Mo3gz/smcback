@@ -34,7 +34,9 @@ Stores available countries for purchase.
   name: String,         // Country name
   cost: Number,         // Purchase cost
   owner: String,        // User ID of owner (null if unowned)
-  score: Number         // Points value
+  score: Number,        // Points value
+  miningRate: Number,   // Coins per hour mining rate
+  lastMined: String     // ISO timestamp of last mining collection (per country)
 }
 ```
 
