@@ -2759,6 +2759,313 @@ app.post('/api/admin/countries/ownership', authenticateToken, requireAdmin, asyn
   }
 });
 
+// Admin add new country
+app.post('/api/admin/countries/add', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { name, cost, score, miningRate } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Country name is required' });
+    }
+    
+    if (!cost || cost < 0) {
+      return res.status(400).json({ error: 'Valid cost is required' });
+    }
+    
+    if (!score || score < 0) {
+      return res.status(400).json({ error: 'Valid score is required' });
+    }
+    
+    if (!miningRate || miningRate < 0) {
+      return res.status(400).json({ error: 'Valid mining rate is required' });
+    }
+    
+    // Generate new country ID
+    const countries = await getAllCountries();
+    const maxId = Math.max(...countries.map(c => parseInt(c.id)), 0);
+    const newId = (maxId + 1).toString();
+    
+    const newCountry = {
+      id: newId,
+      name: name.trim(),
+      cost: parseInt(cost),
+      owner: null,
+      score: parseInt(score),
+      miningRate: parseInt(miningRate)
+    };
+    
+    // Save to database
+    if (mongoConnected && db) {
+      await db.collection('countries').insertOne(newCountry);
+    } else {
+      countries.push(newCountry);
+    }
+    
+    console.log(`New country "${name}" added by admin`);
+    
+    // Emit to all clients about new country
+    io.emit('country-added', newCountry);
+    
+    res.json({ 
+      success: true, 
+      country: newCountry,
+      message: `Country "${name}" added successfully` 
+    });
+  } catch (error) {
+    console.error('Add country error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin delete country
+app.delete('/api/admin/countries/:countryId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { countryId } = req.params;
+    
+    const country = await findCountryById(countryId);
+    if (!country) {
+      return res.status(404).json({ error: 'Country not found' });
+    }
+    
+    // If country has an owner, update their mining rate
+    if (country.owner) {
+      const owner = await findUserById(country.owner);
+      if (owner) {
+        const newMiningRate = await calculateUserMiningRate(country.owner);
+        await updateUserById(country.owner, { miningRate: newMiningRate });
+        
+        // Emit user update
+        io.to(country.owner).emit('user-update', {
+          id: country.owner,
+          teamName: owner.teamName,
+          coins: owner.coins,
+          score: owner.score,
+          miningRate: newMiningRate
+        });
+      }
+    }
+    
+    // Delete from database
+    if (mongoConnected && db) {
+      await db.collection('countries').deleteOne({ id: countryId });
+    } else {
+      const index = countries.findIndex(c => c.id === countryId);
+      if (index !== -1) {
+        countries.splice(index, 1);
+      }
+    }
+    
+    console.log(`Country "${country.name}" deleted by admin`);
+    
+    // Emit to all clients about country deletion
+    io.emit('country-deleted', { countryId, countryName: country.name });
+    
+    res.json({ 
+      success: true, 
+      countryId,
+      message: `Country "${country.name}" deleted successfully` 
+    });
+  } catch (error) {
+    console.error('Delete country error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin update country properties
+app.put('/api/admin/countries/:countryId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { countryId } = req.params;
+    const { name, cost, score, miningRate } = req.body;
+    
+    const country = await findCountryById(countryId);
+    if (!country) {
+      return res.status(404).json({ error: 'Country not found' });
+    }
+    
+    const updates = {};
+    
+    if (name && name.trim()) {
+      updates.name = name.trim();
+    }
+    
+    if (cost !== undefined && cost >= 0) {
+      updates.cost = parseInt(cost);
+    }
+    
+    if (score !== undefined && score >= 0) {
+      updates.score = parseInt(score);
+    }
+    
+    if (miningRate !== undefined && miningRate >= 0) {
+      updates.miningRate = parseInt(miningRate);
+    }
+    
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid updates provided' });
+    }
+    
+    // Update country
+    await updateCountryById(countryId, updates);
+    
+    // If mining rate changed and country has owner, update their mining rate
+    if (updates.miningRate && country.owner) {
+      const owner = await findUserById(country.owner);
+      if (owner) {
+        const newMiningRate = await calculateUserMiningRate(country.owner);
+        await updateUserById(country.owner, { miningRate: newMiningRate });
+        
+        // Emit user update
+        io.to(country.owner).emit('user-update', {
+          id: country.owner,
+          teamName: owner.teamName,
+          coins: owner.coins,
+          score: owner.score,
+          miningRate: newMiningRate
+        });
+      }
+    }
+    
+    console.log(`Country "${country.name}" updated by admin`);
+    
+    // Emit to all clients about country update
+    io.emit('country-updated', { countryId, updates });
+    
+    res.json({ 
+      success: true, 
+      countryId,
+      updates,
+      message: `Country "${country.name}" updated successfully` 
+    });
+  } catch (error) {
+    console.error('Update country error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin adjust user coins
+app.post('/api/admin/users/:userId/coins', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { coins, operation } = req.body; // operation: 'set', 'add', 'subtract'
+    
+    if (!coins || coins < 0) {
+      return res.status(400).json({ error: 'Valid coins amount is required' });
+    }
+    
+    if (!['set', 'add', 'subtract'].includes(operation)) {
+      return res.status(400).json({ error: 'Invalid operation. Use: set, add, or subtract' });
+    }
+    
+    const user = await findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    let newCoins;
+    switch (operation) {
+      case 'set':
+        newCoins = coins;
+        break;
+      case 'add':
+        newCoins = user.coins + coins;
+        break;
+      case 'subtract':
+        newCoins = Math.max(0, user.coins - coins);
+        break;
+    }
+    
+    await updateUserById(userId, { coins: newCoins });
+    
+    console.log(`User "${user.teamName}" coins adjusted by admin: ${operation} ${coins} = ${newCoins}`);
+    
+    // Emit user update
+    io.to(userId).emit('user-update', {
+      id: userId,
+      teamName: user.teamName,
+      coins: newCoins,
+      score: user.score
+    });
+    
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+    
+    res.json({ 
+      success: true, 
+      userId,
+      operation,
+      oldCoins: user.coins,
+      newCoins,
+      message: `User coins updated successfully` 
+    });
+  } catch (error) {
+    console.error('Adjust user coins error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin adjust user score
+app.post('/api/admin/users/:userId/score', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { score, operation } = req.body; // operation: 'set', 'add', 'subtract'
+    
+    if (!score || score < 0) {
+      return res.status(400).json({ error: 'Valid score amount is required' });
+    }
+    
+    if (!['set', 'add', 'subtract'].includes(operation)) {
+      return res.status(400).json({ error: 'Invalid operation. Use: set, add, or subtract' });
+    }
+    
+    const user = await findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    let newScore;
+    switch (operation) {
+      case 'set':
+        newScore = score;
+        break;
+      case 'add':
+        newScore = user.score + score;
+        break;
+      case 'subtract':
+        newScore = Math.max(0, user.score - score);
+        break;
+    }
+    
+    await updateUserById(userId, { score: newScore });
+    
+    console.log(`User "${user.teamName}" score adjusted by admin: ${operation} ${score} = ${newScore}`);
+    
+    // Emit user update
+    io.to(userId).emit('user-update', {
+      id: userId,
+      teamName: user.teamName,
+      coins: user.coins,
+      score: newScore
+    });
+    
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+    
+    res.json({ 
+      success: true, 
+      userId,
+      operation,
+      oldScore: user.score,
+      newScore,
+      message: `User score updated successfully` 
+    });
+  } catch (error) {
+    console.error('Adjust user score error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Speed Buy completion check
 app.post('/api/speedbuy/check', authenticateToken, async (req, res) => {
   try {
