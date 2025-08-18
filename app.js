@@ -791,14 +791,14 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/scoreboard', async (req, res) => {
   try {
     const users = await getAllUsers();
-    const scoreboard = users
-      .filter(user => user.role === 'user')
-      .filter(user => {
-        // Check if team has scoreboard visibility disabled
-        const teamSettings = user.teamSettings || {};
-        return teamSettings.scoreboardVisible !== false;
-      })
-      .map(user => ({
+          const scoreboard = users
+        .filter(user => user.role === 'user')
+        .filter(user => {
+          // Check if team has scoreboard visibility disabled
+          const teamSettings = user.teamSettings || {};
+          return teamSettings.scoreboardVisible !== false;
+        })
+        .map(user => ({
         id: user.id || user._id,
         teamName: user.teamName,
         score: user.score,
@@ -2205,17 +2205,7 @@ let countryVisibilitySettings = {};
 
 // Helper function to get available games
 function getAvailableGames() {
-  console.log('🎮 getAvailableGames() called');
-  console.log('🎮 gameSettings:', gameSettings);
-  console.log('🎮 Object.keys(gameSettings):', Object.keys(gameSettings));
-  
-  const availableGames = Object.keys(gameSettings).filter(game => {
-    const isEnabled = gameSettings[game] && gameSettings[game].enabled;
-    console.log(`🎮 Game ${game}: enabled = ${isEnabled}`);
-    return isEnabled;
-  });
-  
-  console.log('🎮 Available games result:', availableGames);
+  const availableGames = Object.keys(gameSettings).filter(game => gameSettings[game].enabled);
   return availableGames;
 }
 
@@ -2421,13 +2411,8 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
     console.log('🎮 Before toggle - gameSettings:', gameSettings);
     console.log('🎮 Toggling game', gameId, 'to', enabled);
     
-    // Update the enabled status for the game
-    if (gameSettings[gameId]) {
-      gameSettings[gameId].enabled = enabled;
-    } else {
-      // If game doesn't exist, create it with default name
-      gameSettings[gameId] = { enabled: enabled, name: `Game ${gameId}` };
-    }
+    // Remove the hardcoded limit check to allow dynamic games
+    gameSettings[gameId] = enabled;
     
     console.log('🎮 After toggle - gameSettings:', gameSettings);
     
@@ -2439,17 +2424,11 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
     
     console.log('🎮 Toggle successful, sending response');
     
-    // Convert to frontend format for response
-    const frontendGameSettings = {};
-    Object.keys(gameSettings).forEach(gameId => {
-      frontendGameSettings[gameId] = gameSettings[gameId].enabled;
-    });
-    
     res.json({ 
       success: true, 
       gameId, 
       enabled, 
-      gameSettings: frontendGameSettings
+      gameSettings 
     });
   } catch (error) {
     console.error('Toggle game error:', error);
@@ -2478,7 +2457,7 @@ app.post('/api/admin/games/add', authenticateToken, requireAdmin, async (req, re
     }
     
     // Add new game (enabled by default)
-    gameSettings[nextGameId] = { enabled: true, name: gameName.trim() };
+    gameSettings[nextGameId] = true;
     
     // Save to database
     await saveGameSettings();
@@ -2488,15 +2467,9 @@ app.post('/api/admin/games/add', authenticateToken, requireAdmin, async (req, re
     // Emit to all clients about game setting change
     io.emit('game-settings-update', gameSettings);
     
-    // Convert to frontend format for response
-    const frontendGameSettings = {};
-    Object.keys(gameSettings).forEach(gameId => {
-      frontendGameSettings[gameId] = gameSettings[gameId].enabled;
-    });
-    
     res.json({ 
       success: true, 
-      gameSettings: frontendGameSettings, 
+      gameSettings, 
       newGameId: nextGameId,
       message: `Game ${nextGameId} added successfully` 
     });
@@ -2578,15 +2551,7 @@ app.post('/api/admin/games/reset', authenticateToken, requireAdmin, async (req, 
 app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('🎮 Admin games endpoint called');
-    
-    // Convert the gameSettings format to what the frontend expects
-    const frontendGameSettings = {};
-    Object.keys(gameSettings).forEach(gameId => {
-      frontendGameSettings[gameId] = gameSettings[gameId].enabled;
-    });
-    
-    console.log('🎮 Sending game settings to frontend:', frontendGameSettings);
-    res.json(frontendGameSettings);
+    res.json(gameSettings);
   } catch (error) {
     console.error('Get game settings error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -2600,22 +2565,12 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
 app.get('/api/games/available', authenticateToken, async (req, res) => {
   try {
     console.log('🎮 Available games endpoint called');
-    console.log('🎮 Current gameSettings:', gameSettings);
-    
     const availableGames = getAvailableGames();
-    console.log('🎮 Available games result:', availableGames);
     console.log('🎮 Sending available games to frontend:', availableGames);
-    
-    // Ensure we're sending an array
-    if (!Array.isArray(availableGames)) {
-      console.error('❌ getAvailableGames() did not return an array:', availableGames);
-      return res.status(500).json({ error: 'Invalid games data format' });
-    }
-    
     res.json(availableGames);
   } catch (error) {
-    console.error('❌ Get available games error:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
+    console.error('Get available games error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
