@@ -2411,8 +2411,13 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
     console.log('🎮 Before toggle - gameSettings:', gameSettings);
     console.log('🎮 Toggling game', gameId, 'to', enabled);
     
-    // Remove the hardcoded limit check to allow dynamic games
-    gameSettings[gameId] = enabled;
+    // Update the enabled status for the game
+    if (gameSettings[gameId]) {
+      gameSettings[gameId].enabled = enabled;
+    } else {
+      // If game doesn't exist, create it with default name
+      gameSettings[gameId] = { enabled: enabled, name: `Game ${gameId}` };
+    }
     
     console.log('🎮 After toggle - gameSettings:', gameSettings);
     
@@ -2424,11 +2429,17 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
     
     console.log('🎮 Toggle successful, sending response');
     
+    // Convert to frontend format for response
+    const frontendGameSettings = {};
+    Object.keys(gameSettings).forEach(gameId => {
+      frontendGameSettings[gameId] = gameSettings[gameId].enabled;
+    });
+    
     res.json({ 
       success: true, 
       gameId, 
       enabled, 
-      gameSettings 
+      gameSettings: frontendGameSettings
     });
   } catch (error) {
     console.error('Toggle game error:', error);
@@ -2457,7 +2468,7 @@ app.post('/api/admin/games/add', authenticateToken, requireAdmin, async (req, re
     }
     
     // Add new game (enabled by default)
-    gameSettings[nextGameId] = true;
+    gameSettings[nextGameId] = { enabled: true, name: gameName.trim() };
     
     // Save to database
     await saveGameSettings();
@@ -2467,9 +2478,15 @@ app.post('/api/admin/games/add', authenticateToken, requireAdmin, async (req, re
     // Emit to all clients about game setting change
     io.emit('game-settings-update', gameSettings);
     
+    // Convert to frontend format for response
+    const frontendGameSettings = {};
+    Object.keys(gameSettings).forEach(gameId => {
+      frontendGameSettings[gameId] = gameSettings[gameId].enabled;
+    });
+    
     res.json({ 
       success: true, 
-      gameSettings, 
+      gameSettings: frontendGameSettings, 
       newGameId: nextGameId,
       message: `Game ${nextGameId} added successfully` 
     });
@@ -2551,7 +2568,15 @@ app.post('/api/admin/games/reset', authenticateToken, requireAdmin, async (req, 
 app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('🎮 Admin games endpoint called');
-    res.json(gameSettings);
+    
+    // Convert the gameSettings format to what the frontend expects
+    const frontendGameSettings = {};
+    Object.keys(gameSettings).forEach(gameId => {
+      frontendGameSettings[gameId] = gameSettings[gameId].enabled;
+    });
+    
+    console.log('🎮 Sending game settings to frontend:', frontendGameSettings);
+    res.json(frontendGameSettings);
   } catch (error) {
     console.error('Get game settings error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -2691,16 +2716,36 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
     const { teamId } = req.params;
     const { scoreboardVisible, spinLimitations, resetSpinCounts } = req.body;
     
+    console.log('📝 Request body:', { teamId, scoreboardVisible, spinLimitations, resetSpinCounts });
+    
     const user = await getUserById(teamId);
     if (!user) {
+      console.log(`❌ Team not found: ${teamId}`);
       return res.status(404).json({ error: 'Team not found' });
     }
     
+    console.log(`👤 Found team: ${user.teamName} (${teamId})`);
+    
+    // Initialize default settings if they don't exist
+    const currentSettings = user.teamSettings || {
+      scoreboardVisible: true,
+      spinLimitations: {
+        regular: { enabled: false, limit: 1 },
+        lucky: { enabled: false, limit: 1 },
+        special: { enabled: false, limit: 1 }
+      },
+      spinCounts: {
+        regular: 0,
+        lucky: 0,
+        special: 0
+      }
+    };
+    
     // Update team settings
     const updatedSettings = {
-      ...user.teamSettings,
-      scoreboardVisible: scoreboardVisible !== undefined ? scoreboardVisible : user.teamSettings?.scoreboardVisible,
-      spinLimitations: spinLimitations || user.teamSettings?.spinLimitations
+      ...currentSettings,
+      scoreboardVisible: scoreboardVisible !== undefined ? scoreboardVisible : currentSettings.scoreboardVisible,
+      spinLimitations: spinLimitations || currentSettings.spinLimitations
     };
     
     // Reset spin counts if requested
@@ -2712,7 +2757,11 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
       };
     }
     
-    await updateUser(teamId, { teamSettings: updatedSettings });
+    console.log(`🔄 Updating team ${user.teamName} with settings:`, updatedSettings);
+    
+    await updateUserById(teamId, { teamSettings: updatedSettings });
+    
+    console.log(`✅ Successfully updated team ${user.teamName}`);
     
     // Emit socket event for real-time updates
     if (io) {
@@ -2721,8 +2770,8 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
     
     res.json({ success: true, settings: updatedSettings });
   } catch (error) {
-    console.error('Update team settings error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Update team settings error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
@@ -2732,28 +2781,55 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
     console.log('⚙️ Admin update all teams settings endpoint called');
     const { scoreboardVisible, spinLimitations, resetSpinCounts } = req.body;
     
+    console.log('📝 Request body:', { scoreboardVisible, spinLimitations, resetSpinCounts });
+    
     const users = await getAllUsers();
     const teamUsers = users.filter(user => user.role === 'user');
     
+    console.log(`👥 Found ${teamUsers.length} teams to update`);
+    
     const updatePromises = teamUsers.map(async (user) => {
-      const updatedSettings = {
-        ...user.teamSettings,
-        scoreboardVisible: scoreboardVisible !== undefined ? scoreboardVisible : user.teamSettings?.scoreboardVisible,
-        spinLimitations: spinLimitations || user.teamSettings?.spinLimitations
-      };
-      
-      if (resetSpinCounts) {
-        updatedSettings.spinCounts = {
-          regular: 0,
-          lucky: 0,
-          special: 0
+      try {
+        // Initialize default settings if they don't exist
+        const currentSettings = user.teamSettings || {
+          scoreboardVisible: true,
+          spinLimitations: {
+            regular: { enabled: false, limit: 1 },
+            lucky: { enabled: false, limit: 1 },
+            special: { enabled: false, limit: 1 }
+          },
+          spinCounts: {
+            regular: 0,
+            lucky: 0,
+            special: 0
+          }
         };
+        
+        const updatedSettings = {
+          ...currentSettings,
+          scoreboardVisible: scoreboardVisible !== undefined ? scoreboardVisible : currentSettings.scoreboardVisible,
+          spinLimitations: spinLimitations || currentSettings.spinLimitations
+        };
+        
+        if (resetSpinCounts) {
+          updatedSettings.spinCounts = {
+            regular: 0,
+            lucky: 0,
+            special: 0
+          };
+        }
+        
+        console.log(`🔄 Updating team ${user.teamName} (${user.id || user._id}) with settings:`, updatedSettings);
+        
+        return await updateUserById(user.id || user._id, { teamSettings: updatedSettings });
+      } catch (userError) {
+        console.error(`❌ Error updating team ${user.teamName}:`, userError);
+        throw userError;
       }
-      
-      return updateUser(user.id || user._id, { teamSettings: updatedSettings });
     });
     
-    await Promise.all(updatePromises);
+    const results = await Promise.all(updatePromises);
+    console.log(`✅ Successfully updated ${results.length} teams`);
     
     // Emit socket event for real-time updates
     if (io) {
@@ -2762,8 +2838,8 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
     
     res.json({ success: true, updatedTeams: teamUsers.length });
   } catch (error) {
-    console.error('Update all teams settings error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Update all teams settings error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
