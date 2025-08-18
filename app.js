@@ -1442,48 +1442,52 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
           teamSettings: updatedTeamSettings
         });
       }
+    }
+    
+    // Check for automatic reset after EVERY successful spin (regardless of limitations)
+    const currentUser = await findUserById(req.user.id);
+    const currentSpinCounts = currentUser.teamSettings?.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
+    
+    // Check if this was the last enabled spin type
+    const enabledSpinTypes = Object.entries(spinLimitations)
+      .filter(([type, lim]) => lim.enabled && lim.limit > 0)
+      .map(([type]) => type);
+    
+    const completedSpinTypes = enabledSpinTypes.filter(type => 
+      (currentSpinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
+    );
+    
+    if (enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length) {
+      console.log(`🎉 User ${user.teamName} has completed all their enabled spin types!`);
       
-      // Check if this was the last enabled spin type
-      const enabledSpinTypes = Object.entries(spinLimitations)
-        .filter(([type, lim]) => lim.enabled && lim.limit > 0)
-        .map(([type]) => type);
-      
-      const completedSpinTypes = enabledSpinTypes.filter(type => 
-        (updatedSpinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
-      );
-      
-      if (completedSpinTypes.length === enabledSpinTypes.length) {
-        console.log(`🎉 User ${user.teamName} has completed all their enabled spin types!`);
-        
-        // Reset all spin counts to 0
-        const resetTeamSettings = {
-          ...updatedTeamSettings,
-          spinCounts: {
-            lucky: 0,
-            gamehelper: 0,
-            challenge: 0,
-            hightier: 0,
-            lowtier: 0,
-            random: 0
-          }
-        };
-        
-        await updateUserById(req.user.id, { teamSettings: resetTeamSettings });
-        console.log(`🔄 Reset all spin counts to 0 for user ${user.teamName}`);
-        
-        // Send notification to user that their spins have been reset
-        if (io) {
-          io.emit('spin-counts-reset', { 
-            userId: req.user.id,
-            message: `Congratulations! You've completed all your enabled spin types (${enabledSpinTypes.length} total). Your spin counts have been reset and you can continue spinning.`
-          });
-          
-          // Also send updated team settings with reset counts
-          io.emit('user-team-settings-updated', {
-            userId: req.user.id,
-            teamSettings: resetTeamSettings
-          });
+      // Reset all spin counts to 0
+      const resetTeamSettings = {
+        ...currentUser.teamSettings,
+        spinCounts: {
+          lucky: 0,
+          gamehelper: 0,
+          challenge: 0,
+          hightier: 0,
+          lowtier: 0,
+          random: 0
         }
+      };
+      
+      await updateUserById(req.user.id, { teamSettings: resetTeamSettings });
+      console.log(`🔄 Reset all spin counts to 0 for user ${user.teamName}`);
+      
+      // Send notification to user that their spins have been reset
+      if (io) {
+        io.emit('spin-counts-reset', { 
+          userId: req.user.id,
+          message: `Congratulations! You've completed all your enabled spin types (${enabledSpinTypes.length} total). Your spin counts have been reset and you can continue spinning.`
+        });
+        
+        // Also send updated team settings with reset counts
+        io.emit('user-team-settings-updated', {
+          userId: req.user.id,
+          teamSettings: resetTeamSettings
+        });
       }
     }
 
