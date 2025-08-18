@@ -2536,6 +2536,20 @@ app.get('/api/admin/games-test', async (req, res) => {
   }
 });
 
+// Simple test route to check if admin routes work at all
+app.get('/api/admin/test-simple-route', async (req, res) => {
+  try {
+    console.log('🎮 Simple admin route test called');
+    res.json({
+      message: 'Simple admin route works!',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Simple admin route test error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Simple test admin endpoint
 app.get('/api/admin/test-simple', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -2565,7 +2579,7 @@ app.get('/api/admin/test-basic', authenticateToken, requireAdmin, async (req, re
   }
 });
 
-// Get available games for users
+// Get available games for users (moved after admin routes to avoid conflicts)
 app.get('/api/games/available', authenticateToken, async (req, res) => {
   try {
     console.log('🎮 Available games endpoint called');
@@ -3064,13 +3078,26 @@ app.use('*', (req, res) => {
   const adminRoutes = allRoutes.filter(route => route.includes('/admin'));
   console.log(`🔍 Admin routes:`, adminRoutes);
   
+  // Check specifically for games routes
+  const gamesRoutes = allRoutes.filter(route => route.includes('/games'));
+  console.log(`🔍 Games routes:`, gamesRoutes);
+  
+  // Check if the specific route exists
+  const requestedRoute = `${req.method.toUpperCase()} ${req.originalUrl}`;
+  const routeExists = allRoutes.includes(requestedRoute);
+  console.log(`🔍 Requested route: ${requestedRoute}`);
+  console.log(`🔍 Route exists: ${routeExists}`);
+  
   res.status(404).json({ 
     error: 'Route not found', 
     method: req.method, 
     path: req.originalUrl,
     timestamp: new Date().toISOString(),
     totalRoutes: allRoutes.length,
-    adminRoutes: adminRoutes
+    adminRoutes: adminRoutes,
+    gamesRoutes: gamesRoutes,
+    requestedRoute: requestedRoute,
+    routeExists: routeExists
   });
 });
 
