@@ -2501,7 +2501,7 @@ app.post('/api/admin/games/reset', authenticateToken, requireAdmin, async (req, 
   }
 });
 
-// Get game settings
+// Get game settings (with authentication)
 app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('🎮 Admin games endpoint called');
@@ -2514,6 +2514,24 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
     res.json(gameSettings);
   } catch (error) {
     console.error('Get game settings error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get game settings (without authentication - for testing)
+app.get('/api/admin/games-test', async (req, res) => {
+  try {
+    console.log('🎮 Admin games test endpoint called (no auth)');
+    console.log('🎮 Request URL:', req.url);
+    console.log('🎮 Request method:', req.method);
+    console.log('🎮 Current gameSettings:', gameSettings);
+    res.json({
+      message: 'Games test endpoint works!',
+      gameSettings: gameSettings,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Get game settings test error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -3061,9 +3079,24 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS Origin: * (Public Access)`);
-  console.log(`🔧 Total routes registered: ${app._router.stack.filter(r => r.route).length}`);
-  console.log(`🔧 Admin routes:`, app._router.stack
-    .filter(r => r.route && r.route.path && r.route.path.includes('/admin'))
-    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`)
-  );
+  
+  // Debug route registration
+  const allRoutes = app._router.stack
+    .filter(r => r.route)
+    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`);
+  
+  console.log(`🔧 Total routes registered: ${allRoutes.length}`);
+  console.log(`🔧 All routes:`, allRoutes);
+  
+  // Check specifically for admin routes
+  const adminRoutes = allRoutes.filter(route => route.includes('/admin'));
+  console.log(`🔧 Admin routes:`, adminRoutes);
+  
+  // Check specifically for games routes
+  const gamesRoutes = allRoutes.filter(route => route.includes('/games'));
+  console.log(`🔧 Games routes:`, gamesRoutes);
+  
+  // Check if the specific route exists
+  const gamesRoute = allRoutes.find(route => route.includes('/api/admin/games'));
+  console.log(`🔧 /api/admin/games route exists:`, !!gamesRoute);
 });
