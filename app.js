@@ -114,7 +114,9 @@ let users = [
     role: 'admin',
     teamName: 'Ayman',
     coins: 1000,
-    score: 0
+    score: 0,
+    totalMined: 0,
+    lastMined: null
   },
   {
     id: '2',
@@ -123,7 +125,9 @@ let users = [
     role: 'user',
     teamName: 'Team Alpha',
     coins: 500,
-    score: 0
+    score: 0,
+    totalMined: 0,
+    lastMined: null
   },
   {
     id: '3',
@@ -132,41 +136,43 @@ let users = [
     role: 'user',
     teamName: 'Team Beta',
     coins: 500,
-    score: 0
+    score: 0,
+    totalMined: 0,
+    lastMined: null
   }
 ];
 
 let countries = [
-  { id: '1', name: 'Egypt', cost: 200, owner: null, score: 150 },
-  { id: '2', name: 'Morocco', cost: 180, owner: null, score: 140 },
-  { id: '3', name: 'Algeria', cost: 160, owner: null, score: 130 },
-  { id: '4', name: 'Tunisia', cost: 140, owner: null, score: 120 },
-  { id: '5', name: 'Libya', cost: 120, owner: null, score: 110 },
-  { id: '6', name: 'Sudan', cost: 100, owner: null, score: 100 },
-  { id: '7', name: 'Ethiopia', cost: 90, owner: null, score: 90 },
-  { id: '8', name: 'Kenya', cost: 80, owner: null, score: 80 },
-  { id: '9', name: 'Nigeria', cost: 70, owner: null, score: 70 },
-  { id: '10', name: 'Ghana', cost: 60, owner: null, score: 60 },
-  { id: '11', name: 'South Africa', cost: 210, owner: null, score: 160 },
-  { id: '12', name: 'Senegal', cost: 75, owner: null, score: 65 },
-  { id: '13', name: 'Ivory Coast', cost: 85, owner: null, score: 75 },
-  { id: '14', name: 'Cameroon', cost: 95, owner: null, score: 85 },
-  { id: '15', name: 'Uganda', cost: 70, owner: null, score: 60 },
-  { id: '16', name: 'Saudi Arabia', cost: 220, owner: null, score: 170 },
-  { id: '17', name: 'United Arab Emirates', cost: 200, owner: null, score: 160 },
-  { id: '18', name: 'Qatar', cost: 180, owner: null, score: 150 },
-  { id: '19', name: 'Jordan', cost: 110, owner: null, score: 90 },
-  { id: '20', name: 'Lebanon', cost: 100, owner: null, score: 80 },
-  { id: '21', name: 'Turkey', cost: 230, owner: null, score: 180 },
-  { id: '22', name: 'Greece', cost: 150, owner: null, score: 120 },
-  { id: '23', name: 'Italy', cost: 250, owner: null, score: 200 },
-  { id: '24', name: 'France', cost: 270, owner: null, score: 220 },
-  { id: '25', name: 'Spain', cost: 260, owner: null, score: 210 },
-  { id: '26', name: 'Germany', cost: 280, owner: null, score: 230 },
-  { id: '27', name: 'United Kingdom', cost: 290, owner: null, score: 240 },
-  { id: '28', name: 'Portugal', cost: 140, owner: null, score: 110 },
-  { id: '29', name: 'Netherlands', cost: 200, owner: null, score: 160 },
-  { id: '30', name: 'Belgium', cost: 190, owner: null, score: 150 }
+  { id: '1', name: 'Egypt', cost: 200, owner: null, score: 150, miningRate: 100000 },
+  { id: '2', name: 'Morocco', cost: 180, owner: null, score: 140, miningRate: 90000 },
+  { id: '3', name: 'Algeria', cost: 160, owner: null, score: 130, miningRate: 80000 },
+  { id: '4', name: 'Tunisia', cost: 140, owner: null, score: 120, miningRate: 70000 },
+  { id: '5', name: 'Libya', cost: 120, owner: null, score: 110, miningRate: 60000 },
+  { id: '6', name: 'Sudan', cost: 100, owner: null, score: 100, miningRate: 50000 },
+  { id: '7', name: 'Ethiopia', cost: 90, owner: null, score: 90, miningRate: 45000 },
+  { id: '8', name: 'Kenya', cost: 80, owner: null, score: 80, miningRate: 40000 },
+  { id: '9', name: 'Nigeria', cost: 70, owner: null, score: 70, miningRate: 35000 },
+  { id: '10', name: 'Ghana', cost: 60, owner: null, score: 60, miningRate: 30000 },
+  { id: '11', name: 'South Africa', cost: 210, owner: null, score: 160, miningRate: 110000 },
+  { id: '12', name: 'Senegal', cost: 75, owner: null, score: 65, miningRate: 37500 },
+  { id: '13', name: 'Ivory Coast', cost: 85, owner: null, score: 75, miningRate: 42500 },
+  { id: '14', name: 'Cameroon', cost: 95, owner: null, score: 85, miningRate: 47500 },
+  { id: '15', name: 'Uganda', cost: 70, owner: null, score: 60, miningRate: 35000 },
+  { id: '16', name: 'Saudi Arabia', cost: 220, owner: null, score: 170, miningRate: 120000 },
+  { id: '17', name: 'United Arab Emirates', cost: 200, owner: null, score: 160, miningRate: 110000 },
+  { id: '18', name: 'Qatar', cost: 180, owner: null, score: 150, miningRate: 100000 },
+  { id: '19', name: 'Jordan', cost: 110, owner: null, score: 90, miningRate: 55000 },
+  { id: '20', name: 'Lebanon', cost: 100, owner: null, score: 80, miningRate: 50000 },
+  { id: '21', name: 'Turkey', cost: 230, owner: null, score: 180, miningRate: 130000 },
+  { id: '22', name: 'Greece', cost: 150, owner: null, score: 120, miningRate: 75000 },
+  { id: '23', name: 'Italy', cost: 250, owner: null, score: 200, miningRate: 150000 },
+  { id: '24', name: 'France', cost: 270, owner: null, score: 220, miningRate: 170000 },
+  { id: '25', name: 'Spain', cost: 260, owner: null, score: 210, miningRate: 160000 },
+  { id: '26', name: 'Germany', cost: 280, owner: null, score: 230, miningRate: 180000 },
+  { id: '27', name: 'United Kingdom', cost: 290, owner: null, score: 240, miningRate: 190000 },
+  { id: '28', name: 'Portugal', cost: 140, owner: null, score: 110, miningRate: 70000 },
+  { id: '29', name: 'Netherlands', cost: 200, owner: null, score: 160, miningRate: 110000 },
+  { id: '30', name: 'Belgium', cost: 190, owner: null, score: 150, miningRate: 100000 }
 ];
 
 let userInventories = {};
@@ -829,7 +835,12 @@ app.get('/api/scoreboard', async (req, res) => {
 app.get('/api/countries', async (req, res) => {
   try {
     const countries = await getAllCountries();
-    res.json(countries);
+    // Include mining rate in the response
+    const countriesWithMining = countries.map(country => ({
+      ...country,
+      miningRate: country.miningRate || 0
+    }));
+    res.json(countriesWithMining);
   } catch (error) {
     console.error('Get countries error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -1805,6 +1816,8 @@ app.get("/api/user", authenticateToken, async (req, res) => {
       teamName: user.teamName,
       coins: user.coins,
       score: user.score,
+      totalMined: user.totalMined || 0,
+      lastMined: user.lastMined
     });
   } catch (error) {
     console.error("Error fetching user details:", error);
@@ -1987,5 +2000,168 @@ app.post('/api/promocode/validate', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Promo code validation error:', error);
     res.status(500).json({ valid: false, error: 'Internal server error' });
+  }
+});
+
+// Helper function to calculate user's mining rate
+async function calculateUserMiningRate(userId) {
+  try {
+    const countries = await getAllCountries();
+    const ownedCountries = countries.filter(country => country.owner === userId);
+    const totalMiningRate = ownedCountries.reduce((sum, country) => sum + (country.miningRate || 0), 0);
+    return totalMiningRate;
+  } catch (error) {
+    console.error('Error calculating mining rate:', error);
+    return 0;
+  }
+}
+
+// Helper function to get user's mining info
+async function getUserMiningInfo(userId) {
+  try {
+    const user = await findUserById(userId);
+    if (!user) return null;
+    
+    const miningRate = await calculateUserMiningRate(userId);
+    const ownedCountries = await getAllCountries().then(countries => 
+      countries.filter(country => country.owner === userId)
+    );
+    
+    return {
+      userId,
+      miningRate,
+      totalMined: user.totalMined || 0,
+      lastMined: user.lastMined,
+      ownedCountries: ownedCountries.map(country => ({
+        id: country.id,
+        name: country.name,
+        miningRate: country.miningRate || 0
+      }))
+    };
+  } catch (error) {
+    console.error('Error getting user mining info:', error);
+    return null;
+  }
+}
+
+// Mining system endpoints
+app.get('/api/mining/info', authenticateToken, async (req, res) => {
+  try {
+    const miningInfo = await getUserMiningInfo(req.user.id);
+    if (!miningInfo) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(miningInfo);
+  } catch (error) {
+    console.error('Get mining info error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/mining/collect', authenticateToken, async (req, res) => {
+  try {
+    const user = await findUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const miningInfo = await getUserMiningInfo(req.user.id);
+    if (!miningInfo) {
+      return res.status(404).json({ error: 'Mining info not found' });
+    }
+
+    if (miningInfo.miningRate === 0) {
+      return res.status(400).json({ error: 'You need to own countries to mine coins' });
+    }
+
+    const now = new Date();
+    const lastMined = user.lastMined ? new Date(user.lastMined) : null;
+    
+    let earned = 0;
+    if (lastMined) {
+      const elapsedMinutes = Math.floor((now - lastMined) / (1000 * 60));
+      earned = Math.floor((elapsedMinutes * miningInfo.miningRate) / 60);
+    } else {
+      // First time mining, give a small bonus
+      earned = Math.floor(miningInfo.miningRate / 60);
+    }
+
+    if (earned <= 0) {
+      return res.status(400).json({ 
+        error: 'Not enough time has passed since last collection',
+        nextCollection: lastMined ? new Date(lastMined.getTime() + (60 * 1000 * 60 / miningInfo.miningRate)) : now
+      });
+    }
+
+    // Update user data
+    const newTotalMined = (user.totalMined || 0) + earned;
+    const newCoins = user.coins + earned;
+    
+    await updateUserById(req.user.id, {
+      totalMined: newTotalMined,
+      lastMined: now.toISOString(),
+      coins: newCoins
+    });
+
+    // Emit user update
+    io.to(req.user.id).emit('user-update', {
+      id: req.user.id,
+      teamName: user.teamName,
+      coins: newCoins,
+      score: user.score,
+      totalMined: newTotalMined,
+      lastMined: now.toISOString()
+    });
+
+    // Create user notification
+    const userNotification = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'mining',
+      message: `You mined ${earned} coins!`,
+      timestamp: now.toISOString(),
+      read: false,
+      recipientType: 'user',
+      metadata: {
+        earned,
+        miningRate: miningInfo.miningRate
+      }
+    };
+    await addNotification(userNotification);
+    io.to(req.user.id).emit('notification', userNotification);
+
+    // Create admin notification
+    const adminNotification = {
+      id: (Date.now() + 1).toString(),
+      type: 'mining',
+      teamId: req.user.id,
+      teamName: user.teamName,
+      message: `User ${user.teamName} mined ${earned} coins`,
+      timestamp: now.toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        earned,
+        miningRate: miningInfo.miningRate,
+        totalMined: newTotalMined
+      }
+    };
+    await addNotification(adminNotification);
+    io.emit('admin-notification', adminNotification);
+
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+
+    res.json({
+      message: `Successfully mined ${earned} coins!`,
+      earned,
+      totalMined: newTotalMined,
+      lastMined: now.toISOString(),
+      newCoins
+    });
+  } catch (error) {
+    console.error('Collect mining error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
