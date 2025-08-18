@@ -1039,15 +1039,24 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     const { spinType, promoCode } = req.body;
     const user = await findUserById(req.user.id);
     
+    // Set costs for new spin types
     let cost = 50;
-    if (spinType === 'random') cost = 25;
+    switch(spinType) {
+      case 'lucky': cost = 50; break;
+      case 'gamehelper': cost = 75; break;
+      case 'challenge': cost = 100; break;
+      case 'hightier': cost = 150; break;
+      case 'lowtier': cost = 25; break;
+      case 'random': cost = 30; break;
+      default: cost = 50;
+    }
 
     // Check promo code
     if (promoCode) {
       const promo = await findPromoCode(promoCode, req.user.id);
       if (promo) {
         cost = Math.floor(cost * (1 - promo.discount / 100));
-        await markPromoCodeAsUsed(promoCode, req.user.id); // Mark as used after applying
+        await markPromoCodeAsUsed(promoCode, req.user.id);
       }
     }
 
@@ -1057,119 +1066,109 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 
     const newCoins = user.coins - cost;
     await updateUserById(req.user.id, { coins: newCoins });
-    // Emit user-update for this user
-    io.to(user.id || user._id).emit('user-update', {
-      id: user.id || user._id,
-      teamName: user.teamName,
-      coins: newCoins,
-      score: user.score
-    });
 
     // Generate random card based on spin type
     const cards = getCardsByType(spinType);
     const randomCard = cards[Math.floor(Math.random() * cards.length)];
 
-    // Special instant-action cards: do NOT add to inventory, just update coins
-    if (randomCard.name === "i`amphoteric") {
-      const updatedCoins = newCoins + 150;
-      await updateUserById(req.user.id, { coins: updatedCoins });
-      io.to(user.id || user._id).emit('user-update', {
-        id: user.id || user._id,
-        teamName: user.teamName,
-        coins: updatedCoins,
-        score: user.score
-      });
-      // Notification for user
-      const userSpinNotification = {
-        id: Date.now().toString(),
-        userId: req.user.id,
-        type: 'spin',
-        message: `You spun and received: ${randomCard.name} (+150 coins instantly)`,
-        timestamp: new Date().toISOString(),
-        read: false,
-        recipientType: 'user'
-      };
-      await addNotification(userSpinNotification);
-      io.to(req.user.id).emit('notification', userSpinNotification);
-      // Admin notification
-      const adminSpinNotification = {
-        id: Date.now().toString(),
-        type: 'spin',
-        teamId: user.id || user._id,
-        teamName: user.teamName,
-        message: `${user.teamName} spun the wheel and got: ${randomCard.name} (+150 coins instantly)`,
-        cardName: randomCard.name,
-        cardType: randomCard.type,
-        timestamp: new Date().toISOString(),
-        read: false,
-        recipientType: 'admin'
-      };
-      await addNotification(adminSpinNotification);
-      io.emit('admin-notification', adminSpinNotification);
-      // Scoreboard update
-      const updatedUsers = await getAllUsers();
-      io.emit('scoreboard-update', updatedUsers);
-      return res.json({ 
-        card: randomCard,
-        cost,
-        remainingCoins: updatedCoins
-      });
-    } else if (randomCard.name === 'Everything Against Me') {
-      const updatedCoins = newCoins - 75;
-      await updateUserById(req.user.id, { coins: updatedCoins });
-      io.to(user.id || user._id).emit('user-update', {
-        id: user.id || user._id,
-        teamName: user.teamName,
-        coins: updatedCoins,
-        score: user.score
-      });
-      // Notification for user
-      const userSpinNotification = {
-        id: Date.now().toString(),
-        userId: req.user.id,
-        type: 'spin',
-        message: `You spun and received: ${randomCard.name} (-75 coins instantly)`,
-        timestamp: new Date().toISOString(),
-        read: false,
-        recipientType: 'user'
-      };
-      await addNotification(userSpinNotification);
-      io.to(req.user.id).emit('notification', userSpinNotification);
-      // Admin notification
-      const adminSpinNotification = {
-        id: Date.now().toString(),
-        type: 'spin',
-        teamId: user.id || user._id,
-        teamName: user.teamName,
-        message: `${user.teamName} spun the wheel and got: ${randomCard.name} (-75 coins instantly)`,
-        cardName: randomCard.name,
-        cardType: randomCard.type,
-        timestamp: new Date().toISOString(),
-        read: false,
-        recipientType: 'admin'
-      };
-      await addNotification(adminSpinNotification);
-      io.emit('admin-notification', adminSpinNotification);
-      // Scoreboard update
-      const updatedUsers = await getAllUsers();
-      io.emit('scoreboard-update', updatedUsers);
-      return res.json({ 
-        card: randomCard,
-        cost,
-        remainingCoins: updatedCoins
-      });
+    let finalCoins = newCoins;
+    let isInstantAction = false;
+    let additionalData = {};
+
+    // Handle different action types
+    switch(randomCard.actionType) {
+      case 'instant':
+        // Instant coin changes
+        finalCoins = newCoins + (randomCard.coinChange || 0);
+        await updateUserById(req.user.id, { coins: finalCoins });
+        isInstantAction = true;
+        break;
+
+      case 'instant_tax':
+        // Pay 10 coins per owned country
+        const ownedCountries = await getOwnedCountriesCount(req.user.id);
+        const taxAmount = ownedCountries * 10;
+        finalCoins = newCoins - taxAmount;
+        await updateUserById(req.user.id, { coins: finalCoins });
+        isInstantAction = true;
+        additionalData.taxAmount = taxAmount;
+        additionalData.ownedCountries = ownedCountries;
+        break;
+
+      case 'random_gift':
+        // Give 50 coins to random team
+        const allUsers = await getAllUsers();
+        const otherUsers = allUsers.filter(u => u.id !== req.user.id);
+        if (otherUsers.length > 0) {
+          const randomUser = otherUsers[Math.floor(Math.random() * otherUsers.length)];
+          await updateUserById(randomUser.id, { coins: randomUser.coins + 50 });
+          
+          // Notify both teams
+          const giftNotification = {
+            id: Date.now().toString(),
+            userId: randomUser.id,
+            type: 'gift-received',
+            message: `You received 50 coins from ${user.teamName}'s spin!`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            recipientType: 'user'
+          };
+          await addNotification(giftNotification);
+          io.to(randomUser.id).emit('notification', giftNotification);
+          
+          additionalData.giftedTeam = randomUser.teamName;
+        }
+        isInstantAction = true;
+        break;
+
+      case 'speed_buy':
+        // Start 10-minute timer for speed buy challenge
+        const speedBuyTimer = {
+          userId: req.user.id,
+          startTime: Date.now(),
+          duration: 10 * 60 * 1000, // 10 minutes
+          reward: 50
+        };
+        // Store timer in memory or database
+        global.speedBuyTimers = global.speedBuyTimers || {};
+        global.speedBuyTimers[req.user.id] = speedBuyTimer;
+        
+        additionalData.timerStarted = true;
+        additionalData.duration = 10;
+        break;
+
+      case 'mcq':
+        // Load random question for MCQ
+        const fs = require('fs');
+        const questions = JSON.parse(fs.readFileSync('./spiritual-questions.json', 'utf8'));
+        const randomQuestion = questions.questions[Math.floor(Math.random() * questions.questions.length)];
+        additionalData.question = randomQuestion;
+        additionalData.timeLimit = 10; // 10 seconds
+        break;
     }
 
-    // Default: normal card, add to inventory
-    const cardToAdd = {
-      ...randomCard,
-      id: Date.now().toString(),
-      obtainedAt: new Date().toISOString()
-    };
+    // Emit user-update for coin changes
+    io.to(user.id || user._id).emit('user-update', {
+      id: user.id || user._id,
+      teamName: user.teamName,
+      coins: finalCoins,
+      score: user.score
+    });
 
-    await addToUserInventory(req.user.id, cardToAdd);
+    // Only add to inventory if it's NOT an instant action card
+    if (!isInstantAction && randomCard.actionType !== 'admin') {
+      const cardToAdd = {
+        id: Date.now().toString(),
+        name: randomCard.name,
+        type: randomCard.type,
+        effect: randomCard.effect,
+        obtainedAt: new Date().toISOString()
+      };
+      await addToUserInventory(req.user.id, cardToAdd);
+      io.to(req.user.id).emit('inventory-update');
+    }
 
-    // User notification for spin (send only to user, not admin)
+    // User notification for spin
     const userSpinNotification = {
       id: Date.now().toString(),
       userId: req.user.id,
@@ -1182,40 +1181,36 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     await addNotification(userSpinNotification);
     io.to(req.user.id).emit('notification', userSpinNotification);
 
-    // Emit user update for real-time updates
-    io.emit('user-update', {
-      id: user.id || user._id,
-      coins: newCoins,
-      score: user.score
-    });
+    // Send admin notification for non-instant cards or special cases
+    if (randomCard.actionType === 'admin' || !isInstantAction) {
+      const adminSpinNotification = {
+        id: Date.now().toString(),
+        type: 'spin',
+        teamId: user.id || user._id,
+        teamName: user.teamName,
+        message: `${user.teamName} spun the wheel and got: ${randomCard.name} (${randomCard.type})`,
+        cardName: randomCard.name,
+        cardType: randomCard.type,
+        requiresGameSelection: randomCard.requiresGameSelection,
+        requiresTeamSelection: randomCard.requiresTeamSelection,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'admin'
+      };
+      await addNotification(adminSpinNotification);
+      io.emit('admin-notification', adminSpinNotification);
+    }
 
-    // Emit scoreboard update for all clients
+    // Emit scoreboard update
     const updatedUsers = await getAllUsers();
     io.emit('scoreboard-update', updatedUsers);
-
-    // Notify user that inventory has been updated
-    io.to(req.user.id).emit('inventory-update');
-
-    // Send admin notification for spin with team name and card
-    const adminSpinNotification = {
-      id: Date.now().toString(),
-      type: 'spin',
-      teamId: user.id || user._id,
-      teamName: user.teamName,
-      message: `${user.teamName} spun the wheel and got: ${randomCard.name} (${randomCard.type})`,
-      cardName: randomCard.name,
-      cardType: randomCard.type,
-      timestamp: new Date().toISOString(),
-      read: false,
-      recipientType: 'admin'
-    };
-    await addNotification(adminSpinNotification);
-    io.emit('admin-notification', adminSpinNotification);
 
     res.json({ 
       card: randomCard,
       cost,
-      remainingCoins: newCoins
+      remainingCoins: finalCoins,
+      actionType: randomCard.actionType,
+      additionalData
     });
   } catch (error) {
     console.error('Spin error:', error);
@@ -1920,26 +1915,44 @@ setInterval(async () => {
 // Helper function to get cards by type
 function getCardsByType(spinType) {
   const cards = {
-    luck: [
-      { name: "i`amphoteric", type: 'luck', effect: '+150 Coins instantly' },
-      { name: "Everything Against Me", type: 'luck', effect: 'Instantly lose 75 Coins' },
-      { name: 'el-7aramy', type: 'luck', effect: 'Btsr2 100 coin men ay khema, w law et3raft birg3o el double' }
+    lucky: [
+      { name: "-50 Coins Instantly", type: 'lucky', effect: '-50 coins instantly', actionType: 'instant', coinChange: -50 },
+      { name: "+75 Coins Instantly", type: 'lucky', effect: '+75 coins instantly', actionType: 'instant', coinChange: 75 },
+      { name: "Borrow coins to buy a country", type: 'lucky', effect: 'Balance may go negative, limit -200', actionType: 'admin', requiresTeamSelection: false },
+      { name: "Pay 10 coins as border tax", type: 'lucky', effect: 'Pay 10 coins for each country you own', actionType: 'instant_tax' },
+      { name: "Shield: 2 hours protection", type: 'lucky', effect: '2 hours protection in shift', actionType: 'admin', requiresTeamSelection: true },
+      { name: "+50 Coins to random team", type: 'lucky', effect: '+50 coins given to another random team', actionType: 'random_gift' }
     ],
-    attack: [
-      { name: 'wesh-le-wesh', type: 'attack', effect: '1v1 battle' },
-      { name: 'ana-el-7aramy', type: 'attack', effect: 'Btakhod 100 coins men ay khema mnghir ay challenge' },
-      { name: 'ana-w-bas', type: 'attack', effect: 'Bt3mel risk 3ala haga' }
+    gamehelper: [
+      { name: "Secret Info", type: 'gamehelper', effect: 'Reveal specific hidden game details', actionType: 'admin', requiresGameSelection: true },
+      { name: "Robin Hood", type: 'gamehelper', effect: 'Steal coins from selected team (+50 to you, -100 to them)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Avenger", type: 'gamehelper', effect: 'Team up with selected team (+50 for both, or 0 if declined)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Betrayal", type: 'gamehelper', effect: 'If someone allied against you and you still win, they don\'t get rewards, and you gain +50', actionType: 'admin', requiresGameSelection: true }
     ],
-    alliance: [
-      { name: 'el-nadala', type: 'alliance', effect: 'Bt3mel t7alof w tlghih f ay wa2t w takhod el coins 3ady' },
-      { name: 'el-sohab', type: 'alliance', effect: 'Bt3mel t7alof 3ady' },
-      { name: 'el-melok', type: 'alliance', effect: 'Btst5dm el khema el taniaa y3melo el challenges makanak' }
+    challenge: [
+      { name: "Speed Buy", type: 'challenge', effect: '10 minutes to buy a country (+50 reward)', actionType: 'speed_buy' },
+      { name: "Freeze Player", type: 'challenge', effect: 'Targeted player is frozen (+50 to you)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Mystery Question", type: 'challenge', effect: 'Spiritual MCQ (+15 if answered correctly, with timer)', actionType: 'mcq' },
+      { name: "Silent Game", type: 'challenge', effect: 'Judge decides outcome (+50 or -30)', actionType: 'admin', requiresGameSelection: true }
+    ],
+    hightier: [
+      { name: "+50 Coins Instantly", type: 'hightier', effect: '+50 coins instantly', actionType: 'instant', coinChange: 50 },
+      { name: "Flip the Fate", type: 'hightier', effect: 'If tied in a game, next game decides both results (win = double win, lose = double loss)', actionType: 'admin', requiresGameSelection: true }
+    ],
+    lowtier: [
+      { name: "+100 Coins Instantly", type: 'lowtier', effect: '+100 coins instantly', actionType: 'instant', coinChange: 100 },
+      { name: "-5 Coins Instantly", type: 'lowtier', effect: '-5 coins instantly', actionType: 'instant', coinChange: -5 }
+    ],
+    random: [
+      { name: "Lucky Random", type: 'random', effect: 'Random card from Lucky, Game Helper, or Challenge', actionType: 'random_category' }
     ]
   };
 
   if (spinType === 'random') {
-    const allCards = [...cards.luck, ...cards.attack, ...cards.alliance];
-    return [allCards[Math.floor(Math.random() * allCards.length)]];
+    const availableTypes = ['lucky', 'gamehelper', 'challenge'];
+    const randomType = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+    const randomCards = cards[randomType];
+    return [randomCards[Math.floor(Math.random() * randomCards.length)]];
   }
 
   return cards[spinType] || [];
@@ -2015,6 +2028,141 @@ app.post('/api/promocode/validate', authenticateToken, async (req, res) => {
   }
 });
 
+// MCQ Answer endpoint
+app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
+  try {
+    const { questionId, answer } = req.body;
+    const user = await findUserById(req.user.id);
+    
+    // Load questions and verify answer
+    const fs = require('fs');
+    const questions = JSON.parse(fs.readFileSync('./spiritual-questions.json', 'utf8'));
+    const question = questions.questions.find(q => q.id === questionId);
+    
+    if (!question) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+    
+    const isCorrect = answer === question.correct;
+    let rewardCoins = 0;
+    
+    if (isCorrect) {
+      rewardCoins = 15;
+      const newCoins = user.coins + rewardCoins;
+      await updateUserById(req.user.id, { coins: newCoins });
+      
+      // Emit user update
+      io.to(user.id || user._id).emit('user-update', {
+        id: user.id || user._id,
+        teamName: user.teamName,
+        coins: newCoins,
+        score: user.score
+      });
+      
+      // Notify user
+      const notification = {
+        id: Date.now().toString(),
+        userId: req.user.id,
+        type: 'mcq-reward',
+        message: `Correct answer! You earned ${rewardCoins} coins.`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'user'
+      };
+      await addNotification(notification);
+      io.to(req.user.id).emit('notification', notification);
+      
+      // Update scoreboard
+      const updatedUsers = await getAllUsers();
+      io.emit('scoreboard-update', updatedUsers);
+    }
+    
+    res.json({ 
+      correct: isCorrect, 
+      reward: rewardCoins,
+      correctAnswer: question.correct
+    });
+  } catch (error) {
+    console.error('MCQ answer error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Speed Buy completion check
+app.post('/api/speedbuy/check', authenticateToken, async (req, res) => {
+  try {
+    const user = await findUserById(req.user.id);
+    const timers = global.speedBuyTimers || {};
+    const timer = timers[req.user.id];
+    
+    if (!timer) {
+      return res.status(404).json({ error: 'No active speed buy challenge' });
+    }
+    
+    const currentTime = Date.now();
+    const timeElapsed = currentTime - timer.startTime;
+    
+    if (timeElapsed > timer.duration) {
+      // Timer expired
+      delete timers[req.user.id];
+      return res.json({ expired: true, reward: 0 });
+    }
+    
+    // Check if user bought a country in the last timer period
+    // This is a simplified check - in a real implementation, you'd track purchases
+    const countries = await getAllCountries();
+    const recentPurchases = countries.filter(c => 
+      c.owner === req.user.id && 
+      new Date(c.lastMined) > new Date(timer.startTime)
+    );
+    
+    if (recentPurchases.length > 0) {
+      // User bought a country, give reward
+      const newCoins = user.coins + timer.reward;
+      await updateUserById(req.user.id, { coins: newCoins });
+      
+      // Emit user update
+      io.to(user.id || user._id).emit('user-update', {
+        id: user.id || user._id,
+        teamName: user.teamName,
+        coins: newCoins,
+        score: user.score
+      });
+      
+      // Notify user
+      const notification = {
+        id: Date.now().toString(),
+        userId: req.user.id,
+        type: 'speedbuy-reward',
+        message: `Speed Buy completed! You earned ${timer.reward} coins.`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'user'
+      };
+      await addNotification(notification);
+      io.to(req.user.id).emit('notification', notification);
+      
+      delete timers[req.user.id];
+      
+      res.json({ 
+        completed: true, 
+        reward: timer.reward,
+        remainingCoins: newCoins
+      });
+    } else {
+      const remainingTime = timer.duration - timeElapsed;
+      res.json({ 
+        completed: false, 
+        remainingTime: Math.ceil(remainingTime / 1000),
+        reward: 0 
+      });
+    }
+  } catch (error) {
+    console.error('Speed buy check error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Helper function to calculate user's mining rate
 async function calculateUserMiningRate(userId) {
   try {
@@ -2024,6 +2172,18 @@ async function calculateUserMiningRate(userId) {
     return totalMiningRate;
   } catch (error) {
     console.error('Error calculating mining rate:', error);
+    return 0;
+  }
+}
+
+// Helper function to get owned countries count
+async function getOwnedCountriesCount(userId) {
+  try {
+    const countries = await getAllCountries();
+    const ownedCountries = countries.filter(country => country.owner === userId);
+    return ownedCountries.length;
+  } catch (error) {
+    console.error('Error getting owned countries count:', error);
     return 0;
   }
 }
