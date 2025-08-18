@@ -2415,6 +2415,36 @@ app.delete('/api/admin/games/:gameId', authenticateToken, requireAdmin, async (r
   }
 });
 
+// Reset game settings to defaults
+app.post('/api/admin/games/reset', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('🔄 Resetting game settings to defaults');
+    
+    // Reset to default settings
+    gameSettings = {
+      1: true, 2: true, 3: true, 4: true, 5: true, 6: true,
+      7: true, 8: true, 9: true, 10: true, 11: true, 12: true
+    };
+    
+    // Save to database
+    await saveGameSettings();
+    
+    console.log('✅ Game settings reset to defaults');
+    
+    // Emit to all clients about game setting change
+    io.emit('game-settings-update', gameSettings);
+    
+    res.json({ 
+      success: true, 
+      gameSettings,
+      message: 'Game settings reset to defaults successfully' 
+    });
+  } catch (error) {
+    console.error('Reset game settings error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get game settings
 app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
   try {
