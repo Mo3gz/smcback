@@ -793,6 +793,11 @@ app.get('/api/scoreboard', async (req, res) => {
     const users = await getAllUsers();
     const scoreboard = users
       .filter(user => user.role === 'user')
+      .filter(user => {
+        // Check if team has scoreboard visibility disabled
+        const teamSettings = user.teamSettings || {};
+        return teamSettings.scoreboardVisible !== false;
+      })
       .map(user => ({
         id: user.id || user._id,
         teamName: user.teamName,
@@ -1148,6 +1153,24 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     const { spinType, promoCode } = req.body;
     const user = await findUserById(req.user.id);
     
+    // Check team spin limitations
+    const teamSettings = user.teamSettings || {};
+    const spinLimitations = teamSettings.spinLimitations || {};
+    const spinCounts = teamSettings.spinCounts || { regular: 0, lucky: 0, special: 0 };
+    
+    // Map spin types to limitation categories
+    const spinCategory = spinType === 'lucky' ? 'lucky' : 
+                        (spinType === 'gamehelper' || spinType === 'challenge' || spinType === 'hightier' || spinType === 'lowtier') ? 'special' : 'regular';
+    
+    const limitation = spinLimitations[spinCategory];
+    if (limitation && limitation.enabled) {
+      if (spinCounts[spinCategory] >= limitation.limit) {
+        return res.status(400).json({ 
+          error: `Spin limit reached for ${spinCategory} spins. You can only spin ${limitation.limit} times.` 
+        });
+      }
+    }
+    
     // Set costs for new spin types
     let cost = 50;
     switch(spinType) {
@@ -1311,6 +1334,19 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       };
       await addNotification(adminSpinNotification);
       io.emit('admin-notification', adminSpinNotification);
+    }
+
+    // Update spin counts for team limitations
+    if (limitation && limitation.enabled) {
+      const updatedSpinCounts = { ...spinCounts };
+      updatedSpinCounts[spinCategory] = (updatedSpinCounts[spinCategory] || 0) + 1;
+      
+      const updatedTeamSettings = {
+        ...teamSettings,
+        spinCounts: updatedSpinCounts
+      };
+      
+      await updateUserById(req.user.id, { teamSettings: updatedTeamSettings });
     }
 
     // Emit scoreboard update
@@ -1770,35 +1806,7 @@ app.delete('/api/admin/notifications/cleanup', authenticateToken, requireAdmin, 
   }
 });
 
-// Admin: Get all teams with their cards for admin dashboard
-app.get('/api/admin/teams-cards', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const users = await getAllUsers();
-    const teamsWithCards = [];
-    
-    // Filter only user role (teams) and get their inventory
-    for (const user of users) {
-      if (user.role === 'user') {
-        const inventory = await getUserInventory(user.id || user._id);
-        teamsWithCards.push({
-          id: user.id || user._id,
-          teamName: user.teamName,
-          score: user.score,
-          coins: user.coins,
-          cards: inventory || []
-        });
-      }
-    }
-    
-    // Sort by score (highest first)
-    teamsWithCards.sort((a, b) => b.score - a.score);
-    
-    res.json(teamsWithCards);
-  } catch (error) {
-    console.error('Get teams with cards error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+
 
 // Debug route to print all users
 app.get('/api/debug/users', async (req, res) => {
@@ -2629,6 +2637,132 @@ app.get('/api/admin/card-stats', authenticateToken, requireAdmin, async (req, re
     });
   } catch (error) {
     console.error('Get card stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get all teams with their settings
+app.get('/api/admin/teams', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('👥 Admin teams endpoint called');
+    const users = await getAllUsers();
+    
+    // Filter only user role (teams) and get their settings
+    const teams = users
+      .filter(user => user.role === 'user')
+      .map(user => ({
+        id: user.id || user._id,
+        teamName: user.teamName,
+        username: user.username,
+        score: user.score,
+        coins: user.coins,
+        totalMined: user.totalMined,
+        lastMined: user.lastMined,
+        // Team settings (initialize with defaults if not exists)
+        settings: user.teamSettings || {
+          scoreboardVisible: true,
+          spinLimitations: {
+            regular: { enabled: false, limit: 1 },
+            lucky: { enabled: false, limit: 1 },
+            special: { enabled: false, limit: 1 }
+          },
+          spinCounts: {
+            regular: 0,
+            lucky: 0,
+            special: 0
+          }
+        }
+      }));
+    
+    // Sort by score (highest first)
+    teams.sort((a, b) => b.score - a.score);
+    
+    res.json(teams);
+  } catch (error) {
+    console.error('Get teams error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin update team settings
+app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('⚙️ Admin update team settings endpoint called');
+    const { teamId } = req.params;
+    const { scoreboardVisible, spinLimitations, resetSpinCounts } = req.body;
+    
+    const user = await getUserById(teamId);
+    if (!user) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+    
+    // Update team settings
+    const updatedSettings = {
+      ...user.teamSettings,
+      scoreboardVisible: scoreboardVisible !== undefined ? scoreboardVisible : user.teamSettings?.scoreboardVisible,
+      spinLimitations: spinLimitations || user.teamSettings?.spinLimitations
+    };
+    
+    // Reset spin counts if requested
+    if (resetSpinCounts) {
+      updatedSettings.spinCounts = {
+        regular: 0,
+        lucky: 0,
+        special: 0
+      };
+    }
+    
+    await updateUser(teamId, { teamSettings: updatedSettings });
+    
+    // Emit socket event for real-time updates
+    if (io) {
+      io.emit('team-settings-updated', { teamId, settings: updatedSettings });
+    }
+    
+    res.json({ success: true, settings: updatedSettings });
+  } catch (error) {
+    console.error('Update team settings error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin update all teams settings
+app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('⚙️ Admin update all teams settings endpoint called');
+    const { scoreboardVisible, spinLimitations, resetSpinCounts } = req.body;
+    
+    const users = await getAllUsers();
+    const teamUsers = users.filter(user => user.role === 'user');
+    
+    const updatePromises = teamUsers.map(async (user) => {
+      const updatedSettings = {
+        ...user.teamSettings,
+        scoreboardVisible: scoreboardVisible !== undefined ? scoreboardVisible : user.teamSettings?.scoreboardVisible,
+        spinLimitations: spinLimitations || user.teamSettings?.spinLimitations
+      };
+      
+      if (resetSpinCounts) {
+        updatedSettings.spinCounts = {
+          regular: 0,
+          lucky: 0,
+          special: 0
+        };
+      }
+      
+      return updateUser(user.id || user._id, { teamSettings: updatedSettings });
+    });
+    
+    await Promise.all(updatePromises);
+    
+    // Emit socket event for real-time updates
+    if (io) {
+      io.emit('all-teams-settings-updated', { scoreboardVisible, spinLimitations, resetSpinCounts });
+    }
+    
+    res.json({ success: true, updatedTeams: teamUsers.length });
+  } catch (error) {
+    console.error('Update all teams settings error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
