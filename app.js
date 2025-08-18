@@ -1159,15 +1159,15 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     const spinCounts = teamSettings.spinCounts || { regular: 0, lucky: 0, special: 0 };
     
     // Map spin types to limitation categories
-    const spinCategory = spinType === 'lucky' ? 'lucky' : 
+            const spinCategory = spinType === 'lucky' ? 'lucky' : 
                         spinType === 'gamehelper' ? 'gamehelper' :
                         spinType === 'challenge' ? 'challenge' :
                         spinType === 'hightier' ? 'hightier' :
                         spinType === 'lowtier' ? 'lowtier' :
-                        spinType === 'random' ? 'random' : 'regular';
+                        spinType === 'random' ? 'random' : 'lucky';
     
     const limitation = spinLimitations[spinCategory];
-    if (limitation && limitation.enabled) {
+    if (limitation && limitation.enabled && limitation.limit > 0) {
       if (spinCounts[spinCategory] >= limitation.limit) {
         // Check if user has completed all their enabled spin types
         const enabledSpinTypes = Object.entries(spinLimitations)
@@ -1183,7 +1183,6 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
           const updatedTeamSettings = {
             ...teamSettings,
             spinCounts: {
-              regular: 0,
               lucky: 0,
               gamehelper: 0,
               challenge: 0,
@@ -1397,7 +1396,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       
       // Check if this was the last enabled spin type
       const enabledSpinTypes = Object.entries(spinLimitations)
-        .filter(([type, lim]) => lim.enabled)
+        .filter(([type, lim]) => lim.enabled && lim.limit > 0)
         .map(([type]) => type);
       
       const completedSpinTypes = enabledSpinTypes.filter(type => 
@@ -2730,7 +2729,6 @@ app.get('/api/admin/teams', authenticateToken, requireAdmin, async (req, res) =>
         settings: user.teamSettings || {
           scoreboardVisible: true,
           spinLimitations: {
-            regular: { enabled: false, limit: 1 },
             lucky: { enabled: false, limit: 1 },
             gamehelper: { enabled: false, limit: 1 },
             challenge: { enabled: false, limit: 1 },
@@ -2739,7 +2737,6 @@ app.get('/api/admin/teams', authenticateToken, requireAdmin, async (req, res) =>
             random: { enabled: false, limit: 1 }
           },
           spinCounts: {
-            regular: 0,
             lucky: 0,
             gamehelper: 0,
             challenge: 0,
@@ -2781,7 +2778,6 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
     const currentSettings = user.teamSettings || {
       scoreboardVisible: true,
       spinLimitations: {
-        regular: { enabled: false, limit: 1 },
         lucky: { enabled: false, limit: 1 },
         gamehelper: { enabled: false, limit: 1 },
         challenge: { enabled: false, limit: 1 },
@@ -2790,7 +2786,6 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
         random: { enabled: false, limit: 1 }
       },
       spinCounts: {
-        regular: 0,
         lucky: 0,
         gamehelper: 0,
         challenge: 0,
@@ -2810,9 +2805,12 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
     // Reset spin counts if requested
     if (resetSpinCounts) {
       updatedSettings.spinCounts = {
-        regular: 0,
         lucky: 0,
-        special: 0
+        gamehelper: 0,
+        challenge: 0,
+        hightier: 0,
+        lowtier: 0,
+        random: 0
       };
     }
     
@@ -2853,7 +2851,6 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
                  const currentSettings = user.teamSettings || {
            scoreboardVisible: true,
            spinLimitations: {
-             regular: { enabled: false, limit: 1 },
              lucky: { enabled: false, limit: 1 },
              gamehelper: { enabled: false, limit: 1 },
              challenge: { enabled: false, limit: 1 },
@@ -2862,7 +2859,6 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
              random: { enabled: false, limit: 1 }
            },
            spinCounts: {
-             regular: 0,
              lucky: 0,
              gamehelper: 0,
              challenge: 0,
@@ -2880,9 +2876,12 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
         
         if (resetSpinCounts) {
           updatedSettings.spinCounts = {
-            regular: 0,
             lucky: 0,
-            special: 0
+            gamehelper: 0,
+            challenge: 0,
+            hightier: 0,
+            lowtier: 0,
+            random: 0
           };
         }
         
