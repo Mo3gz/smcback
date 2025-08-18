@@ -2121,8 +2121,18 @@ setInterval(async () => {
 
 // Global game settings - admin can toggle games on/off
 let gameSettings = {
-  1: true, 2: true, 3: true, 4: true, 5: true, 6: true,
-  7: true, 8: true, 9: true, 10: true, 11: true, 12: true
+  1: { enabled: true, name: 'Game 1' },
+  2: { enabled: true, name: 'Game 2' },
+  3: { enabled: true, name: 'Game 3' },
+  4: { enabled: true, name: 'Game 4' },
+  5: { enabled: true, name: 'Game 5' },
+  6: { enabled: true, name: 'Game 6' },
+  7: { enabled: true, name: 'Game 7' },
+  8: { enabled: true, name: 'Game 8' },
+  9: { enabled: true, name: 'Game 9' },
+  10: { enabled: true, name: 'Game 10' },
+  11: { enabled: true, name: 'Game 11' },
+  12: { enabled: true, name: 'Game 12' }
 };
 
 // Load game settings from database
@@ -2187,9 +2197,7 @@ let countryVisibilitySettings = {};
 
 // Helper function to get available games
 function getAvailableGames() {
-  console.log('🎮 Current gameSettings:', gameSettings);
-  const availableGames = Object.keys(gameSettings).filter(game => gameSettings[game]);
-  console.log('🎮 Available games:', availableGames);
+  const availableGames = Object.keys(gameSettings).filter(game => gameSettings[game].enabled);
   return availableGames;
 }
 
@@ -2541,13 +2549,6 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-
-
-
-
-
-
 
 
 
