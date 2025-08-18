@@ -2557,6 +2557,20 @@ app.get('/api/admin/games-alt', async (req, res) => {
   }
 });
 
+// Test endpoint to check if admin routes work at all (no middleware)
+app.get('/api/admin-test-simple', (req, res) => {
+  try {
+    console.log('🎮 Admin test simple endpoint called');
+    res.json({
+      message: 'Admin test simple endpoint works!',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Admin test simple error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get game settings (without authentication - for testing)
 app.get('/api/admin/games-test', async (req, res) => {
   try {
