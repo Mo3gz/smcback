@@ -2654,7 +2654,7 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
     console.log('🎮 Request body:', req.body);
     console.log('🎮 User:', req.user);
     
-    const { gameId, enabled } = req.body;
+    const { gameId, enabled, gameName } = req.body;
     
     if (!gameId || typeof enabled !== 'boolean') {
       console.log('🎮 Invalid request:', { gameId, enabled });
@@ -2662,10 +2662,20 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
     }
     
     console.log('🎮 Before toggle - gameSettings:', gameSettings);
-    console.log('🎮 Toggling game', gameId, 'to', enabled);
+    console.log('🎮 Toggling game', gameId, 'to', enabled, 'with name:', gameName);
     
-    // Remove the hardcoded limit check to allow dynamic games
-    gameSettings[gameId] = enabled;
+    // Update game settings with proper structure
+    if (!gameSettings[gameId]) {
+      gameSettings[gameId] = { 
+        enabled: enabled, 
+        name: gameName || `Game ${gameId}` 
+      };
+    } else {
+      gameSettings[gameId].enabled = enabled;
+      if (gameName) {
+        gameSettings[gameId].name = gameName;
+      }
+    }
     
     console.log('🎮 After toggle - gameSettings:', gameSettings);
     
@@ -2681,10 +2691,49 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
       success: true, 
       gameId, 
       enabled, 
+      gameName: gameSettings[gameId].name,
       gameSettings 
     });
   } catch (error) {
     console.error('Toggle game error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update game name
+app.put('/api/admin/games/:gameId/name', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { gameId } = req.params;
+    const { gameName } = req.body;
+    
+    if (!gameName || !gameName.trim()) {
+      return res.status(400).json({ error: 'Game name is required' });
+    }
+    
+    if (!gameSettings.hasOwnProperty(gameId)) {
+      return res.status(400).json({ error: 'Invalid game ID' });
+    }
+    
+    // Update the game name
+    gameSettings[gameId].name = gameName.trim();
+    
+    // Save to database
+    await saveGameSettings();
+    
+    console.log(`Game ${gameId} name updated to "${gameName.trim()}" by admin`);
+    
+    // Emit to all clients about game setting change
+    io.emit('game-settings-update', gameSettings);
+    
+    res.json({ 
+      success: true, 
+      gameId,
+      gameName: gameName.trim(),
+      gameSettings,
+      message: `Game ${gameId} name updated successfully` 
+    });
+  } catch (error) {
+    console.error('Update game name error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2709,8 +2758,11 @@ app.post('/api/admin/games/add', authenticateToken, requireAdmin, async (req, re
       nextGameId++;
     }
     
-    // Add new game (enabled by default)
-    gameSettings[nextGameId] = true;
+    // Add new game (enabled by default) with custom name
+    gameSettings[nextGameId] = { 
+      enabled: true, 
+      name: gameName.trim() 
+    };
     
     // Save to database
     await saveGameSettings();
@@ -2775,10 +2827,20 @@ app.post('/api/admin/games/reset', authenticateToken, requireAdmin, async (req, 
   try {
     console.log('🔄 Resetting game settings to defaults');
     
-    // Reset to default settings
+    // Reset to default settings with proper structure
     gameSettings = {
-      1: true, 2: true, 3: true, 4: true, 5: true, 6: true,
-      7: true, 8: true, 9: true, 10: true, 11: true, 12: true
+      1: { enabled: true, name: 'Game 1' },
+      2: { enabled: true, name: 'Game 2' },
+      3: { enabled: true, name: 'Game 3' },
+      4: { enabled: true, name: 'Game 4' },
+      5: { enabled: true, name: 'Game 5' },
+      6: { enabled: true, name: 'Game 6' },
+      7: { enabled: true, name: 'Game 7' },
+      8: { enabled: true, name: 'Game 8' },
+      9: { enabled: true, name: 'Game 9' },
+      10: { enabled: true, name: 'Game 10' },
+      11: { enabled: true, name: 'Game 11' },
+      12: { enabled: true, name: 'Game 12' }
     };
     
     // Save to database
