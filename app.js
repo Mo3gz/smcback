@@ -1269,6 +1269,9 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         name: randomCard.name,
         type: randomCard.type,
         effect: randomCard.effect,
+        requiresGameSelection: randomCard.requiresGameSelection,
+        requiresTeamSelection: randomCard.requiresTeamSelection,
+        maxGame: randomCard.maxGame,
         obtainedAt: new Date().toISOString()
       };
       await addToUserInventory(req.user.id, cardToAdd);
@@ -1424,24 +1427,30 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
       return res.status(404).json({ error: 'Team not found' });
     }
 
+    // Find the card definition to get its properties
+    let cardDefinition = null;
+    try {
+      const cardsList = getCardsByType(cardType === 'random' ? 'luck' : cardType);
+      cardDefinition = cardsList.find(c => c.name === cardName);
+    } catch (e) {
+      console.error('Error finding card definition:', e);
+    }
+
     const card = {
       id: Date.now().toString(),
       name: cardName,
       type: cardType,
+      effect: cardDefinition ? cardDefinition.effect : '',
+      requiresGameSelection: cardDefinition ? cardDefinition.requiresGameSelection : false,
+      requiresTeamSelection: cardDefinition ? cardDefinition.requiresTeamSelection : false,
+      maxGame: cardDefinition ? cardDefinition.maxGame : null,
       obtainedAt: new Date().toISOString()
     };
 
     await addToUserInventory(teamId, card);
 
-    // Find the effect for the card
-    let effect = '';
-    try {
-      const cardsList = getCardsByType(cardType === 'random' ? 'luck' : cardType);
-      const found = cardsList.find(c => c.name === cardName);
-      if (found) effect = found.effect;
-    } catch (e) {
-      console.error('Error finding card effect:', e);
-    }
+    // Get the effect from the card definition we already found
+    const effect = cardDefinition ? cardDefinition.effect : '';
 
     // Format card type for display (capitalize first letter)
     const displayCardType = cardType.charAt(0).toUpperCase() + cardType.slice(1);
