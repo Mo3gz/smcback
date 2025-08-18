@@ -2390,6 +2390,21 @@ app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
+// Simple test admin endpoint
+app.get('/api/admin/test-simple', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('🧪 Simple admin test endpoint called');
+    res.json({ 
+      message: 'Simple admin endpoint works!',
+      timestamp: new Date().toISOString(),
+      gameSettings: gameSettings
+    });
+  } catch (error) {
+    console.error('Simple admin test error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get available games for users
 app.get('/api/games/available', authenticateToken, async (req, res) => {
   try {
@@ -2874,16 +2889,26 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
 // Catch-all route for unmatched paths
 app.use('*', (req, res) => {
   console.log(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
-  console.log(`🔍 Available routes:`, app._router.stack
+  
+  // Get all registered routes
+  const allRoutes = app._router.stack
     .filter(r => r.route)
-    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`)
-    .slice(0, 10) // Show first 10 routes
-  );
+    .map(r => `${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`);
+  
+  console.log(`🔍 Total routes registered: ${allRoutes.length}`);
+  console.log(`🔍 All routes:`, allRoutes);
+  
+  // Check specifically for admin routes
+  const adminRoutes = allRoutes.filter(route => route.includes('/admin'));
+  console.log(`🔍 Admin routes:`, adminRoutes);
+  
   res.status(404).json({ 
     error: 'Route not found', 
     method: req.method, 
     path: req.originalUrl,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    totalRoutes: allRoutes.length,
+    adminRoutes: adminRoutes
   });
 });
 
