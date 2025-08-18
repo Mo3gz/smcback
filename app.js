@@ -823,23 +823,28 @@ app.get('/api/countries', async (req, res) => {
 
 app.post('/api/countries/buy', authenticateToken, async (req, res) => {
   try {
+    console.log('🏛️ Country buy request:', { countryId: req.body.countryId, userId: req.user.id });
+    
     const { countryId } = req.body;
     const user = await findUserById(req.user.id);
     const country = await findCountryById(countryId);
 
     if (!country) {
+      console.log('❌ Country not found:', countryId);
       return res.status(404).json({ error: 'Country not found' });
     }
 
     if (country.owner) {
+      console.log('❌ Country already owned:', { countryId, owner: country.owner });
       return res.status(400).json({ error: 'Country already owned' });
     }
 
     if (user.coins < country.cost) {
+      console.log('❌ Insufficient coins:', { userCoins: user.coins, countryCost: country.cost });
       return res.status(400).json({ error: 'Insufficient coins' });
     }
 
-    const newCoins = user.coins - country.cost;
+    let newCoins = user.coins - country.cost;
     const newScore = user.score + country.score;
     const userId = user.id || user._id;
 
@@ -871,16 +876,29 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
     });
 
     // Check if user has active Speed Buy challenge
-    const speedBuyTimers = global.speedBuyTimers || {};
-    if (speedBuyTimers[userId]) {
-      const timer = speedBuyTimers[userId];
+    if (global.speedBuyTimers && global.speedBuyTimers[userId]) {
+      const timer = global.speedBuyTimers[userId];
       const currentTime = Date.now();
+      
+      console.log('🏃 Speed Buy timer found:', { 
+        userId, 
+        timerStart: timer.startTime, 
+        timerDuration: timer.duration, 
+        currentTime, 
+        timeRemaining: timer.startTime + timer.duration - currentTime 
+      });
       
       // Check if timer is still active
       if (currentTime < (timer.startTime + timer.duration)) {
         // Give Speed Buy reward instantly
         const speedBuyReward = timer.reward;
         const newCoinsWithReward = newCoins + speedBuyReward;
+        
+        console.log('🎉 Speed Buy reward applied:', { 
+          originalCoins: newCoins, 
+          reward: speedBuyReward, 
+          newCoins: newCoinsWithReward 
+        });
         
         await updateUserById(req.user.id, { 
           coins: newCoinsWithReward, 
@@ -911,7 +929,7 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
         io.to(userId).emit('notification', speedBuyNotification);
         
         // Clear the timer
-        delete speedBuyTimers[userId];
+        delete global.speedBuyTimers[userId];
         
         // Update final coins for response
         newCoins = newCoinsWithReward;
@@ -956,6 +974,13 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
     await addNotification(adminCountryNotification);
     io.emit('admin-notification', adminCountryNotification);
 
+    console.log('✅ Country purchase successful:', { 
+      countryName: country.name, 
+      finalCoins: newCoins, 
+      finalScore: newScore, 
+      miningRate: newMiningRate 
+    });
+    
     res.json({ 
       message: `Successfully bought ${country.name}`,
       user: {
@@ -965,7 +990,7 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Buy country error:', error);
+    console.error('❌ Buy country error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
