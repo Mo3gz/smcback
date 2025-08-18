@@ -2693,7 +2693,7 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
     
     console.log('📝 Request body:', { teamId, scoreboardVisible, spinLimitations, resetSpinCounts });
     
-    const user = await getUserById(teamId);
+    const user = await findUserById(teamId);
     if (!user) {
       console.log(`❌ Team not found: ${teamId}`);
       return res.status(404).json({ error: 'Team not found' });
