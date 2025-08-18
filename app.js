@@ -96,6 +96,17 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(cookieParser());
 
+// Add a simple test route at the very beginning to ensure routing works
+app.get('/api/debug-test', (req, res) => {
+  console.log('🔧 Debug test endpoint called');
+  res.json({ 
+    message: 'Debug test endpoint works!',
+    timestamp: new Date().toISOString(),
+    requestUrl: req.url,
+    requestMethod: req.method
+  });
+});
+
 // Handle preflight requests
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin);
@@ -1885,6 +1896,28 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Simple test endpoint for debugging
+app.get('/api/test', (req, res) => {
+  console.log('🧪 Test endpoint called');
+  res.json({ 
+    message: 'Test endpoint works!',
+    timestamp: new Date().toISOString(),
+    requestUrl: req.url,
+    requestMethod: req.method
+  });
+});
+
+// Admin test endpoint without authentication
+app.get('/api/admin-test', (req, res) => {
+  console.log('🧪 Admin test endpoint called (no auth)');
+  res.json({ 
+    message: 'Admin test endpoint works!',
+    timestamp: new Date().toISOString(),
+    requestUrl: req.url,
+    requestMethod: req.method
+  });
+});
+
 // Debug route to test admin login
 app.post('/api/debug/admin-test', async (req, res) => {
   try {
@@ -2275,7 +2308,12 @@ app.get('/', (req, res) => {
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
   
-  app.get('*', (req, res) => {
+  // Only serve index.html for non-API routes
+  app.get('*', (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
     res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
   });
 }
@@ -2545,11 +2583,14 @@ app.get('/api/admin/games-alt', async (req, res) => {
     console.log('🎮 Admin games alt endpoint called (no auth)');
     console.log('🎮 Request URL:', req.url);
     console.log('🎮 Request method:', req.method);
+    console.log('🎮 Request headers:', req.headers);
     console.log('🎮 Current gameSettings:', gameSettings);
     res.json({
       message: 'Games alt endpoint works!',
       gameSettings: gameSettings,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      requestUrl: req.url,
+      requestMethod: req.method
     });
   } catch (error) {
     console.error('Get game settings alt error:', error);
@@ -2561,9 +2602,14 @@ app.get('/api/admin/games-alt', async (req, res) => {
 app.get('/api/admin-test-simple', (req, res) => {
   try {
     console.log('🎮 Admin test simple endpoint called');
+    console.log('🎮 Request URL:', req.url);
+    console.log('🎮 Request method:', req.method);
+    console.log('🎮 Request headers:', req.headers);
     res.json({
       message: 'Admin test simple endpoint works!',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      requestUrl: req.url,
+      requestMethod: req.method
     });
   } catch (error) {
     console.error('Admin test simple error:', error);
@@ -2577,11 +2623,14 @@ app.get('/api/admin/games-test', async (req, res) => {
     console.log('🎮 Admin games test endpoint called (no auth)');
     console.log('🎮 Request URL:', req.url);
     console.log('🎮 Request method:', req.method);
+    console.log('🎮 Request headers:', req.headers);
     console.log('🎮 Current gameSettings:', gameSettings);
     res.json({
       message: 'Games test endpoint works!',
       gameSettings: gameSettings,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      requestUrl: req.url,
+      requestMethod: req.method
     });
   } catch (error) {
     console.error('Get game settings test error:', error);
@@ -3118,6 +3167,8 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
 // Catch-all route for unmatched paths
 app.use('*', (req, res) => {
   console.log(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
+  console.log(`❌ Request headers:`, req.headers);
+  console.log(`❌ Request body:`, req.body);
   
   // Get all registered routes
   const allRoutes = app._router.stack
@@ -3141,6 +3192,12 @@ app.use('*', (req, res) => {
   console.log(`🔍 Requested route: ${requestedRoute}`);
   console.log(`🔍 Route exists: ${routeExists}`);
   
+  // Check for similar routes
+  const similarRoutes = allRoutes.filter(route => 
+    route.toLowerCase().includes(req.originalUrl.toLowerCase().replace('/api/', ''))
+  );
+  console.log(`🔍 Similar routes:`, similarRoutes);
+  
   res.status(404).json({ 
     error: 'Route not found', 
     method: req.method, 
@@ -3150,7 +3207,8 @@ app.use('*', (req, res) => {
     adminRoutes: adminRoutes,
     gamesRoutes: gamesRoutes,
     requestedRoute: requestedRoute,
-    routeExists: routeExists
+    routeExists: routeExists,
+    similarRoutes: similarRoutes
   });
 });
 
