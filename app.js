@@ -214,6 +214,9 @@ async function initializeDefaultData() {
     // Load game settings from database
     await loadGameSettings();
 
+    // Migrate existing notifications to ensure they have read field
+    await migrateNotifications();
+
   } catch (error) {
     console.error('❌ Error initializing default data:', error);
   }
@@ -344,10 +347,16 @@ async function removeFromUserInventory(userId, itemId) {
 
 // Helper functions for notifications (MongoDB or fallback)
 async function addNotification(notification) {
+  // Ensure notification has default read status
+  const notificationWithDefaults = {
+    ...notification,
+    read: notification.read !== undefined ? notification.read : false
+  };
+  
   if (mongoConnected && db) {
-    await db.collection('notifications').insertOne(notification);
+    await db.collection('notifications').insertOne(notificationWithDefaults);
   } else {
-    notifications.push(notification);
+    notifications.push(notificationWithDefaults);
   }
 }
 
@@ -383,9 +392,9 @@ async function getUnreadNotificationsCount(userId) {
   if (mongoConnected && db) {
     return await db.collection('notifications').countDocuments({
       $or: [
-        { userId: userId, read: { $ne: true } },
-        { type: 'global', read: { $ne: true } },
-        { type: 'scoreboard-update', read: { $ne: true } }
+        { userId: userId, $or: [{ read: { $ne: true } }, { read: { $exists: false } }] },
+        { type: 'global', $or: [{ read: { $ne: true } }, { read: { $exists: false } }] },
+        { type: 'scoreboard-update', $or: [{ read: { $ne: true } }, { read: { $exists: false } }] }
       ]
     });
   } else {
@@ -420,9 +429,9 @@ async function markAllNotificationsAsRead(userId) {
     await db.collection('notifications').updateMany(
       {
         $or: [
-          { userId: userId, read: { $ne: true } },
-          { type: 'global', read: { $ne: true } },
-          { type: 'scoreboard-update', read: { $ne: true } }
+          { userId: userId, $or: [{ read: { $ne: true } }, { read: { $exists: false } }] },
+          { type: 'global', $or: [{ read: { $ne: true } }, { read: { $exists: false } }] },
+          { type: 'scoreboard-update', $or: [{ read: { $ne: true } }, { read: { $exists: false } }] }
         ]
       },
       { $set: { read: true, readAt: new Date() } }
@@ -701,45 +710,7 @@ app.post('/api/logout', (req, res) => {
   }
 });
 
-function requireAdmin(req, res, next) {
-  console.log('🔐 Admin check - User:', req.user);
-  console.log('🔐 Full req.user:', JSON.stringify(req.user, null, 2));
-  if (!req.user) {
-    console.log('❌ Admin check failed: No user found in request');
-    return res.status(401).json({ 
-      error: 'Authentication required',
-      details: 'No user found in request'
-    });
-  }
-  // Special case: always allow 'ayman' as admin
-  if (req.user.username === 'ayman') {
-    console.log('✅ Admin check bypass: username is ayman');
-    return next();
-  }
-  // More robust role checking
-  const userRole = req.user.role;
-  const isAdmin = userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin';
-  console.log('🔐 User role check:', {
-    userRole,
-    isAdmin,
-    username: req.user.username,
-    userId: req.user.id
-  });
-  if (!isAdmin) {
-    console.log('❌ Admin check failed: User role is not admin');
-    return res.status(403).json({ 
-      error: 'Admin access required',
-      details: {
-        userRole: userRole,
-        userId: req.user.id,
-        username: req.user.username,
-        requiredRole: 'admin'
-      }
-    });
-  }
-  console.log('✅ Admin check passed for user:', req.user.username);
-  next();
-}
+// Removed duplicate requireAdmin function - using the enhanced version above
 
 app.get('/api/debug/auth-state', (req, res) => {
   res.json({
@@ -1721,9 +1692,46 @@ app.post('/api/notifications/read-all', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     await markAllNotificationsAsRead(userId);
-    res.json({ message: 'All notifications marked as read' });
+    
+    // Get updated unread count to verify
+    const unreadCount = await getUnreadNotificationsCount(userId);
+    
+    res.json({ 
+      message: 'All notifications marked as read',
+      unreadCount: unreadCount
+    });
   } catch (error) {
     console.error('Mark all notifications read error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug endpoint to check notification status
+app.get('/api/debug/notifications/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const allNotifications = await getUserNotifications(userId);
+    const unreadCount = await getUnreadNotificationsCount(userId);
+    
+    const notificationsWithReadStatus = allNotifications.map(notification => ({
+      id: notification.id,
+      type: notification.type,
+      message: notification.message,
+      timestamp: notification.timestamp,
+      read: notification.read,
+      readExists: notification.hasOwnProperty('read'),
+      userId: notification.userId
+    }));
+    
+    res.json({
+      userId,
+      totalNotifications: allNotifications.length,
+      unreadCount,
+      notifications: notificationsWithReadStatus
+    });
+  } catch (error) {
+    console.error('Debug notifications error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2067,6 +2075,25 @@ async function saveGameSettings() {
   }
 }
 
+// Migrate existing notifications to ensure they have read field
+async function migrateNotifications() {
+  if (!mongoConnected || !db) return;
+
+  try {
+    // Update notifications that don't have a read field
+    const result = await db.collection('notifications').updateMany(
+      { read: { $exists: false } },
+      { $set: { read: false } }
+    );
+    
+    if (result.modifiedCount > 0) {
+      console.log(`✅ Migrated ${result.modifiedCount} notifications to include read field`);
+    }
+  } catch (error) {
+    console.error('❌ Error migrating notifications:', error);
+  }
+}
+
 // Global country visibility settings - admin can hide/show country ownership
 let countryVisibilitySettings = {};
 
@@ -2162,6 +2189,685 @@ process.on('SIGINT', async () => {
     console.log('MongoDB connection closed');
   }
   process.exit(0);
+});
+
+// All endpoints must be defined before server.listen()
+// Validate promo code for preview (does not mark as used)
+app.post('/api/promocode/validate', authenticateToken, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) {
+      return res.status(400).json({ valid: false, error: 'Promo code is required' });
+    }
+    const promo = await findPromoCode(code, req.user.id);
+    if (promo) {
+      return res.json({ valid: true, discount: promo.discount });
+    } else {
+      return res.json({ valid: false, discount: 0 });
+    }
+  } catch (error) {
+    console.error('Promo code validation error:', error);
+    res.status(500).json({ valid: false, error: 'Internal server error' });
+  }
+});
+
+// MCQ Answer endpoint
+app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
+  try {
+    const { questionId, answer } = req.body;
+    const user = await findUserById(req.user.id);
+    
+    // Load questions and verify answer
+    const fs = require('fs');
+    const questions = JSON.parse(fs.readFileSync('./spiritual-questions.json', 'utf8'));
+    const question = questions.questions.find(q => q.id === questionId);
+    
+    if (!question) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+    
+    const isCorrect = answer === question.correct;
+    let rewardCoins = isCorrect ? 15 : -10;
+    
+    const newCoins = user.coins + rewardCoins;
+    await updateUserById(req.user.id, { coins: newCoins });
+    
+    // Emit user update
+    io.to(user.id || user._id).emit('user-update', {
+      id: user.id || user._id,
+      teamName: user.teamName,
+      coins: newCoins,
+      score: user.score
+    });
+    
+    // Notify user
+    const notification = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'mcq-reward',
+      message: isCorrect 
+        ? `Correct answer! You earned ${rewardCoins} coins.`
+        : `Wrong answer! You lost ${Math.abs(rewardCoins)} coins.`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'user'
+    };
+    await addNotification(notification);
+    io.to(req.user.id).emit('notification', notification);
+    
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+    
+    res.json({ 
+      correct: isCorrect, 
+      reward: rewardCoins,
+      correctAnswer: question.correct
+    });
+  } catch (error) {
+    console.error('MCQ answer error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin toggle games endpoint
+app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { gameId, enabled } = req.body;
+    
+    if (!gameId || typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid game ID or enabled status' });
+    }
+    
+    // Remove the hardcoded limit check to allow dynamic games
+    gameSettings[gameId] = enabled;
+    
+    // Save to database
+    await saveGameSettings();
+    
+    // Emit to all clients about game setting change
+    io.emit('game-settings-update', gameSettings);
+    
+    res.json({ 
+      success: true, 
+      gameId, 
+      enabled, 
+      gameSettings 
+    });
+  } catch (error) {
+    console.error('Toggle game error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add new game
+app.post('/api/admin/games/add', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { gameName } = req.body;
+    
+    if (!gameName || !gameName.trim()) {
+      return res.status(400).json({ error: 'Game name is required' });
+    }
+    
+    // Find the next available game ID
+    const existingGameIds = Object.keys(gameSettings).map(id => parseInt(id)).sort((a, b) => a - b);
+    let nextGameId = 1;
+    
+    for (let i = 0; i < existingGameIds.length; i++) {
+      if (existingGameIds[i] !== nextGameId) {
+        break;
+      }
+      nextGameId++;
+    }
+    
+    // Add new game (enabled by default)
+    gameSettings[nextGameId] = true;
+    
+    // Save to database
+    await saveGameSettings();
+    
+    console.log(`New game ${nextGameId} (${gameName.trim()}) added by admin`);
+    
+    // Emit to all clients about game setting change
+    io.emit('game-settings-update', gameSettings);
+    
+    res.json({ 
+      success: true, 
+      gameSettings, 
+      newGameId: nextGameId,
+      message: `Game ${nextGameId} added successfully` 
+    });
+  } catch (error) {
+    console.error('Add game error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete game
+app.delete('/api/admin/games/:gameId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { gameId } = req.params;
+    const gameIdNum = parseInt(gameId);
+    
+    if (!gameId || !gameSettings.hasOwnProperty(gameId)) {
+      return res.status(400).json({ error: 'Invalid game ID' });
+    }
+    
+    // Don't allow deleting if it's the last game
+    const remainingGames = Object.keys(gameSettings).filter(id => id !== gameId);
+    if (remainingGames.length === 0) {
+      return res.status(400).json({ error: 'Cannot delete the last game. At least one game must exist.' });
+    }
+    
+    // Delete the game
+    delete gameSettings[gameId];
+    
+    // Save to database
+    await saveGameSettings();
+    
+    console.log(`Game ${gameId} deleted by admin`);
+    
+    // Emit to all clients about game setting change
+    io.emit('game-settings-update', gameSettings);
+    
+    res.json({ 
+      success: true, 
+      gameSettings,
+      message: `Game ${gameId} deleted successfully` 
+    });
+  } catch (error) {
+    console.error('Delete game error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get game settings
+app.get('/api/admin/games', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    res.json(gameSettings);
+  } catch (error) {
+    console.error('Get game settings error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get available games for users
+app.get('/api/games/available', authenticateToken, async (req, res) => {
+  try {
+    const availableGames = getAvailableGames();
+    res.json(availableGames);
+  } catch (error) {
+    console.error('Get available games error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get card usage statistics
+app.get('/api/admin/card-stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const notifications = await getAllNotifications();
+    
+    // Filter card usage notifications
+    const cardUsageNotifications = notifications.filter(n => n.type === 'card-used');
+    
+    // Calculate statistics
+    const cardStats = {};
+    const teamStats = {};
+    const gameStats = {};
+    
+    cardUsageNotifications.forEach(notification => {
+      const cardName = notification.cardName;
+      const teamName = notification.teamName;
+      const selectedGame = notification.selectedGame;
+      
+      // Card usage count
+      if (!cardStats[cardName]) {
+        cardStats[cardName] = { count: 0, type: notification.cardType };
+      }
+      cardStats[cardName].count++;
+      
+      // Team usage count
+      if (!teamStats[teamName]) {
+        teamStats[teamName] = 0;
+      }
+      teamStats[teamName]++;
+      
+      // Game selection count
+      if (selectedGame) {
+        if (!gameStats[selectedGame]) {
+          gameStats[selectedGame] = 0;
+        }
+        gameStats[selectedGame]++;
+      }
+    });
+    
+    // Calculate totals and most popular
+    const totalCardsUsed = cardUsageNotifications.length;
+    const mostUsedCard = Object.keys(cardStats).reduce((a, b) => 
+      cardStats[a].count > cardStats[b].count ? a : b, Object.keys(cardStats)[0]);
+    const mostActiveTeam = Object.keys(teamStats).reduce((a, b) => 
+      teamStats[a] > teamStats[b] ? a : b, Object.keys(teamStats)[0]);
+    const mostSelectedGame = Object.keys(gameStats).reduce((a, b) => 
+      gameStats[a] > gameStats[b] ? a : b, Object.keys(gameStats)[0]);
+    
+    res.json({
+      totalCardsUsed,
+      cardStats,
+      teamStats,
+      gameStats,
+      insights: {
+        mostUsedCard: mostUsedCard ? { name: mostUsedCard, count: cardStats[mostUsedCard].count } : null,
+        mostActiveTeam: mostActiveTeam ? { name: mostActiveTeam, count: teamStats[mostActiveTeam] } : null,
+        mostSelectedGame: mostSelectedGame ? { game: mostSelectedGame, count: gameStats[mostSelectedGame] } : null
+      },
+      recentUsage: cardUsageNotifications.slice(0, 10) // Last 10 card uses
+    });
+  } catch (error) {
+    console.error('Get card stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get all countries with ownership details
+app.get('/api/admin/countries', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const countries = await getAllCountries();
+    const users = await getAllUsers();
+    
+    // Create a map of user IDs to team names for quick lookup
+    const userMap = {};
+    users.forEach(user => {
+      userMap[user.id] = user.teamName;
+    });
+    
+    // Add owner name and visibility info to each country
+    const countriesWithDetails = countries.map(country => ({
+      ...country,
+      ownerName: country.owner ? userMap[country.owner] || 'Unknown' : null,
+      isVisible: countryVisibilitySettings[country.id] !== false // Default to visible
+    }));
+    
+    res.json(countriesWithDetails);
+  } catch (error) {
+    console.error('Get admin countries error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin toggle country visibility
+app.post('/api/admin/countries/visibility', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { countryId, visible } = req.body;
+    
+    if (!countryId || typeof visible !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid country ID or visibility status' });
+    }
+    
+    countryVisibilitySettings[countryId] = visible;
+    
+    // Emit to all clients about country visibility change
+    io.emit('country-visibility-update', { countryId, visible });
+    
+    res.json({ 
+      success: true, 
+      countryId, 
+      visible 
+    });
+  } catch (error) {
+    console.error('Toggle country visibility error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin change country ownership
+app.post('/api/admin/countries/ownership', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { countryId, newOwnerId } = req.body;
+    
+    if (!countryId) {
+      return res.status(400).json({ error: 'Country ID is required' });
+    }
+    
+    const country = await findCountryById(countryId);
+    if (!country) {
+      return res.status(404).json({ error: 'Country not found' });
+    }
+    
+    // Update country ownership
+    await updateCountryById(countryId, { 
+      owner: newOwnerId || null,
+      lastMined: new Date().toISOString()
+    });
+    
+    // If assigning to a new owner, update their mining rate
+    if (newOwnerId) {
+      const newOwner = await findUserById(newOwnerId);
+      if (newOwner) {
+        const newMiningRate = await calculateUserMiningRate(newOwnerId);
+        await updateUserById(newOwnerId, { miningRate: newMiningRate });
+        
+        // Emit user update
+        io.to(newOwnerId).emit('user-update', {
+          id: newOwnerId,
+          teamName: newOwner.teamName,
+          coins: newOwner.coins,
+          score: newOwner.score,
+          miningRate: newMiningRate
+        });
+      }
+    }
+    
+    // If removing from previous owner, update their mining rate
+    if (country.owner && country.owner !== newOwnerId) {
+      const prevOwner = await findUserById(country.owner);
+      if (prevOwner) {
+        const prevMiningRate = await calculateUserMiningRate(country.owner);
+        await updateUserById(country.owner, { miningRate: prevMiningRate });
+        
+        // Emit user update
+        io.to(country.owner).emit('user-update', {
+          id: country.owner,
+          teamName: prevOwner.teamName,
+          coins: prevOwner.coins,
+          score: prevOwner.score,
+          miningRate: prevMiningRate
+        });
+      }
+    }
+    
+    // Emit country update to all clients
+    io.emit('country-update', { countryId, newOwnerId });
+    
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+    
+    res.json({ 
+      success: true, 
+      countryId, 
+      newOwnerId 
+    });
+  } catch (error) {
+    console.error('Change country ownership error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Speed Buy completion check
+app.post('/api/speedbuy/check', authenticateToken, async (req, res) => {
+  try {
+    const user = await findUserById(req.user.id);
+    const timers = global.speedBuyTimers || {};
+    const timer = timers[req.user.id];
+    
+    if (!timer) {
+      return res.status(404).json({ error: 'No active speed buy challenge' });
+    }
+    
+    const currentTime = Date.now();
+    const timeElapsed = currentTime - timer.startTime;
+    
+    if (timeElapsed > timer.duration) {
+      // Timer expired
+      delete timers[req.user.id];
+      return res.json({ expired: true, reward: 0 });
+    }
+    
+    // Check if user bought a country in the last timer period
+    // This is a simplified check - in a real implementation, you'd track purchases
+    const countries = await getAllCountries();
+    const recentPurchases = countries.filter(c => 
+      c.owner === req.user.id && 
+      new Date(c.lastMined) > new Date(timer.startTime)
+    );
+    
+    if (recentPurchases.length > 0) {
+      // User bought a country, give reward
+      const newCoins = user.coins + timer.reward;
+      await updateUserById(req.user.id, { coins: newCoins });
+      
+      // Emit user update
+      io.to(user.id || user._id).emit('user-update', {
+        id: user.id || user._id,
+        teamName: user.teamName,
+        coins: newCoins,
+        score: user.score
+      });
+      
+      // Notify user
+      const notification = {
+        id: Date.now().toString(),
+        userId: req.user.id,
+        type: 'speedbuy-reward',
+        message: `Speed Buy completed! You earned ${timer.reward} coins.`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'user'
+      };
+      await addNotification(notification);
+      io.to(req.user.id).emit('notification', notification);
+      
+      delete timers[req.user.id];
+      
+      res.json({ 
+        completed: true, 
+        reward: timer.reward,
+        remainingCoins: newCoins
+      });
+    } else {
+      const remainingTime = timer.duration - timeElapsed;
+      res.json({ 
+        completed: false, 
+        remainingTime: Math.ceil(remainingTime / 1000),
+        reward: 0 
+      });
+    }
+  } catch (error) {
+    console.error('Speed buy check error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Helper function to calculate user's mining rate
+async function calculateUserMiningRate(userId) {
+  try {
+    const countries = await getAllCountries();
+    const ownedCountries = countries.filter(country => country.owner === userId);
+    const totalMiningRate = ownedCountries.reduce((sum, country) => sum + (country.miningRate || 0), 0);
+    return totalMiningRate;
+  } catch (error) {
+    console.error('Error calculating mining rate:', error);
+    return 0;
+  }
+}
+
+// Helper function to get owned countries count
+async function getOwnedCountriesCount(userId) {
+  try {
+    const countries = await getAllCountries();
+    const ownedCountries = countries.filter(country => country.owner === userId);
+    return ownedCountries.length;
+  } catch (error) {
+    console.error('Error getting owned countries count:', error);
+    return 0;
+  }
+}
+
+// Helper function to get user's mining info
+async function getUserMiningInfo(userId) {
+  try {
+    const user = await findUserById(userId);
+    if (!user) return null;
+    
+    const miningRate = await calculateUserMiningRate(userId);
+    const ownedCountries = await getAllCountries().then(countries => 
+      countries.filter(country => country.owner === userId)
+    );
+    
+    return {
+      userId,
+      miningRate,
+      totalMined: user.totalMined || 0,
+      lastMined: user.lastMined,
+      ownedCountries: ownedCountries.map(country => ({
+        id: country.id,
+        name: country.name,
+        miningRate: country.miningRate || 0
+      }))
+    };
+  } catch (error) {
+    console.error('Error getting user mining info:', error);
+    return 0;
+  }
+}
+
+// Mining system endpoints
+app.get('/api/mining/info', authenticateToken, async (req, res) => {
+  try {
+    const miningInfo = await getUserMiningInfo(req.user.id);
+    if (!miningInfo) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(miningInfo);
+  } catch (error) {
+    console.error('Get mining info error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/mining/collect', authenticateToken, async (req, res) => {
+  try {
+    const user = await findUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get all countries owned by the user
+    const allCountries = await getAllCountries();
+    const ownedCountries = allCountries.filter(country => country.owner === req.user.id);
+
+    if (ownedCountries.length === 0) {
+      return res.status(400).json({ error: 'You need to own countries to mine coins' });
+    }
+
+    const now = new Date();
+    let totalEarned = 0;
+    const countriesWithEarnings = [];
+
+    // Calculate earnings for each country individually
+    for (const country of ownedCountries) {
+      const countryLastMined = country.lastMined ? new Date(country.lastMined) : null;
+      let countryEarned = 0;
+
+      if (countryLastMined) {
+        const elapsedMinutes = Math.floor((now - countryLastMined) / (1000 * 60));
+        countryEarned = Math.floor((elapsedMinutes * (country.miningRate || 0)) / 60);
+      } else {
+        // First time mining for this country, give a small bonus
+        countryEarned = Math.floor((country.miningRate || 0) / 60);
+      }
+
+      if (countryEarned > 0) {
+        totalEarned += countryEarned;
+        countriesWithEarnings.push({
+          countryId: country.id,
+          countryName: country.name,
+          earned: countryEarned,
+          miningRate: country.miningRate || 0
+        });
+
+        // Update this country's lastMined timestamp
+        await updateCountryById(country.id, { lastMined: now.toISOString() });
+      }
+    }
+
+    if (totalEarned <= 0) {
+      return res.status(400).json({ 
+        error: 'Not enough time has passed since last collection for any countries',
+        ownedCountries: ownedCountries.map(c => ({
+          name: c.name,
+          lastMined: c.lastMined,
+          miningRate: c.miningRate || 0
+        }))
+      });
+    }
+
+    // Update user data
+    const newTotalMined = (user.totalMined || 0) + totalEarned;
+    const newCoins = user.coins + totalEarned;
+    
+    await updateUserById(req.user.id, {
+      totalMined: newTotalMined,
+      coins: newCoins,
+      lastMined: now.toISOString() // Update user's global lastMined for display purposes
+    });
+
+    // Emit user update
+    io.to(req.user.id).emit('user-update', {
+      id: req.user.id,
+      teamName: user.teamName,
+      coins: newCoins,
+      score: user.score,
+      totalMined: newTotalMined,
+      lastMined: now.toISOString()
+    });
+
+    // Create user notification with breakdown
+    const breakdownMessage = countriesWithEarnings.map(c => 
+      `${c.countryName}: ${c.earned} coins`
+    ).join(', ');
+
+    const userNotification = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'mining',
+      message: `You mined ${totalEarned} coins! (${breakdownMessage})`,
+      timestamp: now.toISOString(),
+      read: false,
+      recipientType: 'user',
+      metadata: {
+        totalEarned,
+        countriesWithEarnings,
+        collectionTime: now.toISOString()
+      }
+    };
+    await addNotification(userNotification);
+    io.to(req.user.id).emit('notification', userNotification);
+
+    // Create admin notification
+    const adminNotification = {
+      id: (Date.now() + 1).toString(),
+      type: 'mining',
+      teamId: req.user.id,
+      teamName: user.teamName,
+      message: `User ${user.teamName} mined ${totalEarned} coins from ${countriesWithEarnings.length} countries`,
+      timestamp: now.toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        totalEarned,
+        totalMined: newTotalMined,
+        countriesWithEarnings
+      }
+    };
+    await addNotification(adminNotification);
+    io.emit('admin-notification', adminNotification);
+
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
+
+    res.json({
+      message: `Successfully mined ${totalEarned} coins from ${countriesWithEarnings.length} countries!`,
+      earned: totalEarned,
+      totalMined: newTotalMined,
+      newCoins,
+      countriesWithEarnings
+    });
+  } catch (error) {
+    console.error('Collect mining error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 const PORT = process.env.PORT || 5000;
