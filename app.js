@@ -2218,10 +2218,7 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
       return res.status(400).json({ error: 'Invalid game ID or enabled status' });
     }
     
-    if (gameId < 1 || gameId > 12) {
-      return res.status(400).json({ error: 'Game ID must be between 1 and 12' });
-    }
-    
+    // Remove the hardcoded limit check to allow dynamic games
     gameSettings[gameId] = enabled;
     
     // Emit to all clients about game setting change
@@ -2235,6 +2232,81 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
     });
   } catch (error) {
     console.error('Toggle game error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add new game
+app.post('/api/admin/games/add', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { gameName } = req.body;
+    
+    if (!gameName || !gameName.trim()) {
+      return res.status(400).json({ error: 'Game name is required' });
+    }
+    
+    // Find the next available game ID
+    const existingGameIds = Object.keys(gameSettings).map(id => parseInt(id)).sort((a, b) => a - b);
+    let nextGameId = 1;
+    
+    for (let i = 0; i < existingGameIds.length; i++) {
+      if (existingGameIds[i] !== nextGameId) {
+        break;
+      }
+      nextGameId++;
+    }
+    
+    // Add new game (enabled by default)
+    gameSettings[nextGameId] = true;
+    
+    console.log(`New game ${nextGameId} (${gameName.trim()}) added by admin`);
+    
+    // Emit to all clients about game setting change
+    io.emit('game-settings-update', gameSettings);
+    
+    res.json({ 
+      success: true, 
+      gameSettings, 
+      newGameId: nextGameId,
+      message: `Game ${nextGameId} added successfully` 
+    });
+  } catch (error) {
+    console.error('Add game error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete game
+app.delete('/api/admin/games/:gameId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { gameId } = req.params;
+    const gameIdNum = parseInt(gameId);
+    
+    if (!gameId || !gameSettings.hasOwnProperty(gameId)) {
+      return res.status(400).json({ error: 'Invalid game ID' });
+    }
+    
+    // Don't allow deleting if it's the last game
+    const remainingGames = Object.keys(gameSettings).filter(id => id !== gameId);
+    if (remainingGames.length === 0) {
+      return res.status(400).json({ error: 'Cannot delete the last game. At least one game must exist.' });
+    }
+    
+    // Delete the game
+    delete gameSettings[gameId];
+    
+    console.log(`Game ${gameId} deleted by admin`);
+    
+    // Emit to all clients about game setting change
+    io.emit('game-settings-update', gameSettings);
+    
+    res.json({ 
+      success: true, 
+      gameSettings,
+      message: `Game ${gameId} deleted successfully` 
+    });
+  } catch (error) {
+    console.error('Delete game error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
