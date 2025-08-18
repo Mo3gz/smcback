@@ -211,6 +211,9 @@ async function initializeDefaultData() {
 
     console.log('✅ Database indexes created successfully');
 
+    // Load game settings from database
+    await loadGameSettings();
+
   } catch (error) {
     console.error('❌ Error initializing default data:', error);
   }
@@ -2026,6 +2029,44 @@ let gameSettings = {
   7: true, 8: true, 9: true, 10: true, 11: true, 12: true
 };
 
+// Load game settings from database
+async function loadGameSettings() {
+  if (!mongoConnected || !db) {
+    console.log('📝 Using in-memory game settings');
+    return;
+  }
+
+  try {
+    const settings = await db.collection('gameSettings').findOne({ _id: 'games' });
+    if (settings && settings.games) {
+      gameSettings = settings.games;
+      console.log('✅ Game settings loaded from database');
+    } else {
+      // Initialize default game settings in database
+      await saveGameSettings();
+      console.log('✅ Default game settings initialized in database');
+    }
+  } catch (error) {
+    console.error('❌ Error loading game settings:', error);
+  }
+}
+
+// Save game settings to database
+async function saveGameSettings() {
+  if (!mongoConnected || !db) return;
+
+  try {
+    await db.collection('gameSettings').replaceOne(
+      { _id: 'games' },
+      { _id: 'games', games: gameSettings, updatedAt: new Date() },
+      { upsert: true }
+    );
+    console.log('✅ Game settings saved to database');
+  } catch (error) {
+    console.error('❌ Error saving game settings:', error);
+  }
+}
+
 // Global country visibility settings - admin can hide/show country ownership
 let countryVisibilitySettings = {};
 
@@ -2221,6 +2262,9 @@ app.post('/api/admin/games/toggle', authenticateToken, requireAdmin, async (req,
     // Remove the hardcoded limit check to allow dynamic games
     gameSettings[gameId] = enabled;
     
+    // Save to database
+    await saveGameSettings();
+    
     // Emit to all clients about game setting change
     io.emit('game-settings-update', gameSettings);
     
@@ -2259,6 +2303,9 @@ app.post('/api/admin/games/add', authenticateToken, requireAdmin, async (req, re
     // Add new game (enabled by default)
     gameSettings[nextGameId] = true;
     
+    // Save to database
+    await saveGameSettings();
+    
     console.log(`New game ${nextGameId} (${gameName.trim()}) added by admin`);
     
     // Emit to all clients about game setting change
@@ -2294,6 +2341,9 @@ app.delete('/api/admin/games/:gameId', authenticateToken, requireAdmin, async (r
     
     // Delete the game
     delete gameSettings[gameId];
+    
+    // Save to database
+    await saveGameSettings();
     
     console.log(`Game ${gameId} deleted by admin`);
     

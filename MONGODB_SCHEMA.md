@@ -122,6 +122,32 @@ Stores promotional codes.
 **Indexes:**
 - `{ code: 1, teamId: 1 }`
 
+#### 6. `gameSettings` ⭐ **NEW**
+Stores game management settings.
+
+```javascript
+{
+  _id: String,          // Fixed ID: 'games'
+  games: Object,        // Game settings object: { "1": true, "2": false, ... }
+  updatedAt: Date       // Last update timestamp
+}
+```
+
+**Example:**
+```javascript
+{
+  _id: "games",
+  games: {
+    "1": true,
+    "2": true,
+    "3": false,
+    "4": true,
+    "13": true  // Dynamically added games
+  },
+  updatedAt: ISODate("2024-01-20T10:30:00.000Z")
+}
+```
+
 ## MongoDB Functions
 
 ### Notification Management Functions
@@ -143,6 +169,14 @@ Marks all notifications for a user as read.
 
 #### `deleteOldNotifications(daysOld)`
 Deletes notifications older than specified days (cleanup function).
+
+### Game Settings Management Functions
+
+#### `loadGameSettings()`
+Loads game settings from the database into memory on server startup.
+
+#### `saveGameSettings()`
+Saves current game settings from memory to the database.
 
 ## Performance Optimizations
 
