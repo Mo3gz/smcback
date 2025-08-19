@@ -3873,7 +3873,7 @@ function getCardsByType(spinType) {
       { name: "+75 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: 75 },
       { name: "Borrow coins to buy a country", type: 'lucky', effect: 'Balance may go negative, limit -200', actionType: 'admin', requiresTeamSelection: false },
       { name: "Pay 10 coins as border tax", type: 'lucky', effect: 'Pay 10 coins for each country you own', actionType: 'instant_tax' },
-      { name: "Shield: 2 hours protection", type: 'lucky', effect: '2 hours protection in shift', actionType: 'admin', requiresTeamSelection: true },
+      { name: "Game Protection", type: 'lucky', effect: 'Protection for selected game', actionType: 'admin', requiresGameSelection: true },
       { name: "+50 Coins to random team", type: 'lucky', effect: '+50 coins given to another random team', actionType: 'random_gift' }
     ],
     gamehelper: [
