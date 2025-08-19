@@ -969,6 +969,119 @@ app.get('/api/debug/safari-auth', async (req, res) => {
   });
 });
 
+// Debug endpoint to manually reset user spin counts (for testing)
+app.post('/api/debug/reset-spins', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔄 === MANUAL SPIN RESET DEBUG START ===');
+    console.log('🔄 User from token:', JSON.stringify(req.user, null, 2));
+    
+    const user = await findUserById(req.user.id);
+    console.log('🔄 User from database:', JSON.stringify(user, null, 2));
+    
+    const currentTeamSettings = user?.teamSettings || {};
+    const currentSpinCounts = currentTeamSettings.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
+    
+    console.log('🔄 Current spin counts before reset:', currentSpinCounts);
+    
+    // Reset all spin counts to 0
+    const resetTeamSettings = {
+      ...currentTeamSettings,
+      spinCounts: {
+        lucky: 0,
+        gamehelper: 0,
+        challenge: 0,
+        hightier: 0,
+        lowtier: 0,
+        random: 0
+      }
+    };
+    
+    await updateUserById(req.user.id, { teamSettings: resetTeamSettings });
+    
+    console.log('🔄 Spin counts reset to 0');
+    
+    // Send notification to user
+    if (io) {
+      io.emit('spin-counts-reset', { 
+        userId: req.user.id,
+        message: `🔄 Manual spin reset completed! All spin counts have been reset to 0.`
+      });
+      
+      io.emit('user-team-settings-updated', {
+        userId: req.user.id,
+        teamSettings: resetTeamSettings
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Spin counts reset successfully',
+      previousCounts: currentSpinCounts,
+      newCounts: resetTeamSettings.spinCounts
+    });
+  } catch (error) {
+    console.error('Manual spin reset error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug endpoint to check user spin status
+app.get('/api/debug/spin-status', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 === SPIN STATUS DEBUG START ===');
+    console.log('🔍 User from token:', JSON.stringify(req.user, null, 2));
+    
+    const user = await findUserById(req.user.id);
+    console.log('🔍 User from database:', JSON.stringify(user, null, 2));
+    
+    const teamSettings = user?.teamSettings || {};
+    const spinLimitations = teamSettings.spinLimitations || {};
+    const spinCounts = teamSettings.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
+    
+    // Check which spin types are enabled
+    const enabledSpinTypes = Object.entries(spinLimitations)
+      .filter(([type, lim]) => lim.enabled && lim.limit > 0)
+      .map(([type]) => type);
+    
+    // Check which spin types are completed
+    const completedSpinTypes = enabledSpinTypes.filter(type => 
+      (spinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
+    );
+    
+    // Check if all enabled spins are completed
+    const allCompleted = enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length;
+    
+    console.log('🔍 Spin status analysis:');
+    console.log('🔍   - Enabled spin types:', enabledSpinTypes);
+    console.log('🔍   - Completed spin types:', completedSpinTypes);
+    console.log('🔍   - All completed:', allCompleted);
+    
+    res.json({
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        teamName: user?.teamName
+      },
+      spinStatus: {
+        spinLimitations,
+        spinCounts,
+        enabledSpinTypes,
+        completedSpinTypes,
+        allCompleted,
+        shouldReset: allCompleted
+      },
+      debug: {
+        enabledCount: enabledSpinTypes.length,
+        completedCount: completedSpinTypes.length,
+        resetTriggered: allCompleted
+      }
+    });
+  } catch (error) {
+    console.error('Spin status debug error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Debug endpoint to check user role and admin status
 app.get('/api/debug/user-role', authenticateToken, async (req, res) => {
   try {
@@ -2249,11 +2362,19 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         (updatedSpinCounts[type] || 0) >= (spinLimitations[type]?.limit || 1)
       );
       
+      console.log(`🔄 Spin completion check for ${user.teamName}:`);
+      console.log(`🔄   - Enabled spin types: ${enabledSpinTypes.join(', ')} (${enabledSpinTypes.length} total)`);
+      console.log(`🔄   - Completed spin types: ${completedSpinTypes.join(', ')} (${completedSpinTypes.length} total)`);
+      console.log(`🔄   - Current spin counts:`, updatedSpinCounts);
+      console.log(`🔄   - Spin limitations:`, spinLimitations);
+      
       let finalTeamSettings;
       
       // If all enabled spin types are completed, reset all counts
       if (enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length) {
         console.log(`🎉 User ${user.teamName} has completed all enabled spin types! Resetting counts.`);
+        console.log(`🎉   - All ${enabledSpinTypes.length} enabled spin types completed`);
+        console.log(`🎉   - Resetting all spin counts to 0`);
         
         finalTeamSettings = {
           ...currentUser.teamSettings,
