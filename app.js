@@ -2626,7 +2626,8 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       io.emit('spin-limitation-status', spinStatusData);
     }
     
-    // If ALL enabled spin types are completed, reset all counts
+    // Only reset if ALL enabled spin types have been completed AND there are enabled spin types
+    // This prevents resetting when no limitations are set or when only some spin types are completed
     if (enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length) {
       console.log(`🎉 User ${user.teamName} has completed ALL enabled spin types! Resetting counts.`);
       console.log(`🎉   - All ${enabledSpinTypes.length} enabled spin types completed`);
@@ -4455,7 +4456,8 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
             (currentSpinCounts[type] || 0) >= (newSpinLimitations[type]?.limit || 1)
           );
           
-          // If all enabled spin types are completed, reset all counts
+          // Only reset if ALL enabled spin types have been completed AND there are enabled spin types
+          // This prevents resetting when no limitations are set or when only some spin types are completed
           if (enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length) {
             console.log(`🔄 User ${user.teamName} has completed all enabled spin types after limit change, resetting counts`);
             updatedSettings.spinCounts = {
