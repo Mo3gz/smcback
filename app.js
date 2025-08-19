@@ -1898,12 +1898,12 @@ app.get('/api/countries', async (req, res) => {
   try {
     const countries = await getAllCountries();
     
-    // Apply global 50 coins visibility filter
-    const filteredCountries = countries.filter(country => {
-      const individualVisible = countryVisibilitySettings[country.id] !== false;
-      const fiftyCoinsVisible = !fiftyCoinsCountriesHidden || country.cost !== 50;
-      return individualVisible && fiftyCoinsVisible;
-    });
+          // Apply global 50 coins visibility filter
+      const filteredCountries = countries.filter(country => {
+        const individualVisible = countryVisibilitySettings[country.id] !== false;
+        const fiftyCoinsVisible = !gameSettings.fiftyCoinsCountriesHidden || country.cost !== 50;
+        return individualVisible && fiftyCoinsVisible;
+      });
     
     // Include mining rate in the response
     const countriesWithMining = filteredCountries.map(country => ({
@@ -3406,7 +3406,9 @@ let gameSettings = {
   9: { enabled: true, name: 'Game 9' },
   10: { enabled: true, name: 'Game 10' },
   11: { enabled: true, name: 'Game 11' },
-  12: { enabled: true, name: 'Game 12' }
+  12: { enabled: true, name: 'Game 12' },
+  // Global settings
+  fiftyCoinsCountriesHidden: false // Global setting for 50 coins countries visibility
 };
 
 // Load game settings from database
@@ -3422,6 +3424,13 @@ async function loadGameSettings() {
     if (settings && settings.games) {
       gameSettings = settings.games;
       console.log('✅ Game settings loaded from database:', gameSettings);
+      
+      // Ensure fiftyCoinsCountriesHidden setting exists
+      if (typeof gameSettings.fiftyCoinsCountriesHidden === 'undefined') {
+        gameSettings.fiftyCoinsCountriesHidden = false;
+        await saveGameSettings();
+        console.log('✅ Added missing fiftyCoinsCountriesHidden setting');
+      }
       
       // Validate the loaded settings
       const availableGames = getAvailableGames();
@@ -3470,7 +3479,9 @@ async function resetGameSettings() {
     9: { enabled: true, name: 'Game 9' },
     10: { enabled: true, name: 'Game 10' },
     11: { enabled: true, name: 'Game 11' },
-    12: { enabled: true, name: 'Game 12' }
+    12: { enabled: true, name: 'Game 12' },
+    // Global settings
+    fiftyCoinsCountriesHidden: false // Global setting for 50 coins countries visibility
   };
   await saveGameSettings();
   console.log('✅ Game settings reset to defaults');
@@ -3529,7 +3540,6 @@ async function migrateUserTeamSettings() {
 
 // Global country visibility settings - admin can hide/show country ownership
 let countryVisibilitySettings = {};
-let fiftyCoinsCountriesHidden = false; // Global setting for 50 coins countries visibility
 
 // Helper function to get available games
 function getAvailableGames() {
@@ -3612,7 +3622,7 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   // Send current global 50 coins visibility state to new connections
-  socket.emit('fifty-coins-countries-visibility-update', { hidden: fiftyCoinsCountriesHidden });
+  socket.emit('fifty-coins-countries-visibility-update', { hidden: gameSettings.fiftyCoinsCountriesHidden });
 
   socket.on('join-team', (teamId) => {
     socket.join(teamId);
@@ -4462,9 +4472,9 @@ app.post('/api/admin/countries/visibility', authenticateToken, requireAdmin, asy
 // Admin get 50 coins countries visibility state
 app.get('/api/admin/countries/fifty-coins-visibility', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    res.json({ 
-      success: true, 
-      hidden: fiftyCoinsCountriesHidden
+        res.json({
+      success: true,
+      hidden: gameSettings.fiftyCoinsCountriesHidden
     });
   } catch (error) {
     console.error('Get 50 coins countries visibility state error:', error);
@@ -4481,7 +4491,8 @@ app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAd
       return res.status(400).json({ error: 'Invalid visibility status' });
     }
     
-    fiftyCoinsCountriesHidden = hidden;
+    gameSettings.fiftyCoinsCountriesHidden = hidden;
+    await saveGameSettings(); // Save to database
     
     // Emit to all clients about 50 coins countries visibility change
     io.emit('fifty-coins-countries-visibility-update', { hidden });
@@ -4490,7 +4501,7 @@ app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAd
     const allCountries = await getAllCountries();
     const filteredCountries = allCountries.filter(country => {
       const individualVisible = countryVisibilitySettings[country.id] !== false;
-      const fiftyCoinsVisible = !fiftyCoinsCountriesHidden || country.cost !== 50;
+      const fiftyCoinsVisible = !gameSettings.fiftyCoinsCountriesHidden || country.cost !== 50;
       return individualVisible && fiftyCoinsVisible;
     });
     
@@ -4498,7 +4509,7 @@ app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAd
     
     res.json({ 
       success: true, 
-      hidden: fiftyCoinsCountriesHidden,
+      hidden: gameSettings.fiftyCoinsCountriesHidden,
       message: `50 coins countries are now ${hidden ? 'hidden' : 'visible'}`
     });
   } catch (error) {
