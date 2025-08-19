@@ -2875,6 +2875,41 @@ app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req,
   }
 });
 
+// Get all promocodes (admin only)
+app.get('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    let allPromocodes = [];
+    if (mongoConnected && db) {
+      allPromocodes = await db.collection('promoCodes').find({}).toArray();
+    } else {
+      allPromocodes = promoCodes;
+    }
+    
+    // Get team names for each promocode
+    const promocodesWithTeamNames = await Promise.all(
+      allPromocodes.map(async (promo) => {
+        let teamName = 'Unassigned';
+        if (promo.teamId) {
+          const user = await findUserById(promo.teamId);
+          if (user) {
+            teamName = user.teamName;
+          }
+        }
+        return {
+          ...promo,
+          teamName
+        };
+      })
+    );
+    
+    res.json(promocodesWithTeamNames);
+  } catch (error) {
+    console.error('Get promocodes error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create new promocode
 app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { code, teamId, discount } = req.body;
@@ -2949,6 +2984,162 @@ app.post('/api/admin/promocodes', authenticateToken, requireAdmin, async (req, r
     res.json(promoCode);
   } catch (error) {
     console.error('Create promo code error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update promocode (assign to team, change percentage, etc.)
+app.put('/api/admin/promocodes/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { teamId, discount, used } = req.body;
+    const adminUser = await findUserById(req.user.id);
+    
+    // Validate discount if provided
+    if (discount !== undefined && (!Number.isInteger(discount) || discount < 1 || discount > 100)) {
+      return res.status(400).json({ error: 'Discount must be an integer between 1 and 100.' });
+    }
+    
+    let updateData = {};
+    if (teamId !== undefined) updateData.teamId = teamId;
+    if (discount !== undefined) updateData.discount = discount;
+    if (used !== undefined) {
+      updateData.used = used;
+      if (used) {
+        updateData.usedAt = new Date().toISOString();
+      }
+    }
+    
+    let updatedPromo = null;
+    if (mongoConnected && db) {
+      const result = await db.collection('promoCodes').updateOne(
+        { id },
+        { $set: updateData }
+      );
+      if (result.modifiedCount > 0) {
+        updatedPromo = await db.collection('promoCodes').findOne({ id });
+      }
+    } else {
+      const promoIndex = promoCodes.findIndex(p => p.id === id);
+      if (promoIndex !== -1) {
+        promoCodes[promoIndex] = { ...promoCodes[promoIndex], ...updateData };
+        updatedPromo = promoCodes[promoIndex];
+      }
+    }
+    
+    if (!updatedPromo) {
+      return res.status(404).json({ error: 'Promocode not found' });
+    }
+    
+    // If assigning to a team, send notification
+    if (teamId && teamId !== updatedPromo.teamId) {
+      const user = await findUserById(teamId);
+      if (user) {
+        const teamNotification = {
+          id: Date.now().toString(),
+          userId: teamId,
+          type: 'promo-code',
+          message: `You received a promo code: ${updatedPromo.code} with ${updatedPromo.discount}% discount!`,
+          timestamp: new Date().toISOString(),
+          read: false,
+          recipientType: 'user'
+        };
+        await addNotification(teamNotification);
+        io.to(teamId).emit('notification', teamNotification);
+        
+        // Create admin action notification
+        const adminAction = {
+          id: (Date.now() + 1).toString(),
+          userId: req.user.id,
+          type: 'admin-action',
+          actionType: 'promo-code-assigned',
+          message: `Admin ${adminUser.teamName} assigned promo code (${updatedPromo.code}) to team ${user.teamName}.`,
+          timestamp: new Date().toISOString(),
+          read: false,
+          recipientType: 'admin',
+          metadata: {
+            targetTeamId: teamId,
+            targetTeamName: user.teamName,
+            promoCode: updatedPromo.code,
+            discount: updatedPromo.discount
+          }
+        };
+        
+        await addNotification(adminAction);
+        io.emit('admin-notification', adminAction);
+      }
+    }
+    
+    res.json(updatedPromo);
+  } catch (error) {
+    console.error('Update promocode error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Initialize promocodes with the provided list
+app.post('/api/admin/promocodes/initialize', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const adminUser = await findUserById(req.user.id);
+    
+    // List of promocodes to initialize
+    const promocodesToAdd = [
+      'GD85CRTZJ', 'SUJUKCFUP', 'KLMNOPQR', 'STUVWXYZ', 'ABCDEFGH',
+      'IJKLMNOP', 'QRSTUVWX', 'YZABCDEF', 'GHIJKLMN', 'OPQRSTUV',
+      'WXYZABCD', 'EFGHIJKL', 'MNOPQRST', 'UVWXYZAB', 'CDEFGHIJ'
+    ];
+    
+    const addedPromocodes = [];
+    
+    for (const code of promocodesToAdd) {
+      // Check if promocode already exists
+      let existingPromo = null;
+      if (mongoConnected && db) {
+        existingPromo = await db.collection('promoCodes').findOne({ code });
+      } else {
+        existingPromo = promoCodes.find(p => p.code === code);
+      }
+      
+      if (!existingPromo) {
+        const promoCode = {
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          code,
+          teamId: null, // Initially unassigned
+          discount: 10, // Default 10% discount
+          used: false,
+          createdAt: new Date().toISOString(),
+          createdBy: req.user.id
+        };
+        
+        await addPromoCode(promoCode);
+        addedPromocodes.push(promoCode);
+      }
+    }
+    
+    // Create admin action notification
+    const adminAction = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'admin-action',
+      actionType: 'promocodes-initialized',
+      message: `Admin ${adminUser.teamName} initialized ${addedPromocodes.length} promocodes.`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        promocodesCount: addedPromocodes.length
+      }
+    };
+    
+    await addNotification(adminAction);
+    io.emit('admin-notification', adminAction);
+    
+    res.json({ 
+      message: `Initialized ${addedPromocodes.length} promocodes`,
+      addedPromocodes 
+    });
+  } catch (error) {
+    console.error('Initialize promocodes error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
