@@ -548,11 +548,12 @@ function getUserId(req) {
   return req.body.id || req.query.id;
 }
 
-// Enhanced Authentication middleware with better debugging
+// Enhanced Authentication middleware with better debugging - macOS/iOS compatible
 function authenticateToken(req, res, next) {
   console.log('🔐 === AUTHENTICATION START ===');
   console.log('🔐 Request URL:', req.url);
   console.log('🔐 Request method:', req.method);
+  console.log('🔐 User-Agent:', req.headers['user-agent']);
   console.log('🔐 Headers:', JSON.stringify({
     authorization: req.headers.authorization,
     'x-auth-token': req.headers['x-auth-token'],
@@ -560,17 +561,32 @@ function authenticateToken(req, res, next) {
     origin: req.headers.origin
   }, null, 2));
   console.log('🔐 Cookies:', JSON.stringify(req.cookies, null, 2));
-  const token = req.cookies.token || 
-                (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
-                req.headers['x-auth-token'] ||
-                req.body.token;
+  
+  // Enhanced token extraction for macOS/iOS compatibility
+  let token = null;
+  let tokenSource = 'none';
+  
+  // Try multiple sources in order of preference
+  if (req.cookies.token) {
+    token = req.cookies.token;
+    tokenSource = 'cookie';
+  } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
+    tokenSource = 'authorization header';
+  } else if (req.headers['x-auth-token']) {
+    token = req.headers['x-auth-token'];
+    tokenSource = 'x-auth-token header';
+  } else if (req.body.token) {
+    token = req.body.token;
+    tokenSource = 'request body';
+  } else if (req.query.token) {
+    token = req.query.token;
+    tokenSource = 'query parameter';
+  }
+  
   console.log('🔐 Token found:', token ? 'Yes' : 'No');
-  console.log('🔐 Token source:', 
-    req.cookies.token ? 'cookie' : 
-    req.headers.authorization ? 'authorization header' :
-    req.headers['x-auth-token'] ? 'x-auth-token header' :
-    req.body.token ? 'request body' : 'none'
-  );
+  console.log('🔐 Token source:', tokenSource);
+  
   if (!token) {
     console.log('❌ No token provided');
     console.log('🔐 === AUTHENTICATION END (NO TOKEN) ===');
@@ -579,13 +595,17 @@ function authenticateToken(req, res, next) {
       debug: {
         cookies: req.cookies,
         authHeader: req.headers.authorization,
-        xAuthToken: req.headers['x-auth-token']
+        xAuthToken: req.headers['x-auth-token'],
+        userAgent: req.headers['user-agent'],
+        platform: 'macos/ios'
       }
     });
   }
+  
   console.log('🔐 Verifying token with JWT_SECRET...');
   console.log('🔐 JWT_SECRET exists:', JWT_SECRET ? 'Yes' : 'No');
   console.log('🔐 Token preview:', token.substring(0, 20) + '...');
+  
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       console.log('❌ Token verification failed:', err.message);
@@ -595,7 +615,8 @@ function authenticateToken(req, res, next) {
         error: 'Invalid token',
         debug: {
           tokenError: err.message,
-          tokenPreview: token.substring(0, 20) + '...'
+          tokenPreview: token.substring(0, 20) + '...',
+          tokenSource: tokenSource
         }
       });
     }
@@ -698,11 +719,18 @@ app.get('/api/debug/token-test', authenticateToken, async (req, res) => {
   }
 });
 
-// Debug endpoint to check current authentication state
+// Debug endpoint to check current authentication state - Enhanced for macOS/iOS
 app.get('/api/debug/auth-state', (req, res) => {
   console.log('🔍 Auth state check');
   console.log('🔍 Cookies:', req.cookies);
   console.log('🔍 Headers:', req.headers);
+  
+  const token = req.cookies.token || 
+                (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
+                req.headers['x-auth-token'] ||
+                req.body.token ||
+                req.query.token;
+  
   res.json({
     cookies: req.cookies,
     headers: {
@@ -711,20 +739,31 @@ app.get('/api/debug/auth-state', (req, res) => {
       'user-agent': req.headers['user-agent'],
       'origin': req.headers.origin
     },
-    hasToken: !!(req.cookies.token || req.headers.authorization || req.headers['x-auth-token']),
+    hasToken: !!token,
+    tokenSource: req.cookies.token ? 'cookie' : 
+                req.headers.authorization ? 'authorization header' :
+                req.headers['x-auth-token'] ? 'x-auth-token header' :
+                req.body.token ? 'request body' :
+                req.query.token ? 'query parameter' : 'none',
+    platform: req.headers['user-agent']?.includes('Mac') ? 'macos' :
+              req.headers['user-agent']?.includes('iPhone') || req.headers['user-agent']?.includes('iPad') ? 'ios' : 'other',
     timestamp: new Date().toISOString()
   });
 });
 
-// Helper to get cookie options based on environment
+// Helper to get cookie options based on environment - Enhanced for macOS/iOS compatibility
 function getCookieOptions() {
   const isProduction = process.env.NODE_ENV === 'production';
+  const isLocalhost = process.env.NODE_ENV !== 'production';
+  
+  // Enhanced cookie options for better macOS/iOS compatibility
   return {
-    httpOnly: true,
+    httpOnly: false, // Allow JavaScript access for mobile compatibility
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: isProduction ? 'none' : 'lax',
-    secure: isProduction ? true : false,
+    sameSite: isLocalhost ? 'lax' : 'none', // Use 'lax' for localhost, 'none' for production
+    secure: isProduction, // Only secure in production
     path: '/',
+    domain: isLocalhost ? undefined : undefined, // Let browser set domain automatically
   };
 }
 
@@ -850,6 +889,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     console.log('🔍 === AUTH ME START ===');
+    console.log('🔍 User-Agent:', req.headers['user-agent']);
     const user = await findUserById(req.user.id);
     if (!user) {
       console.log('❌ User not found in auth/me:', req.user.id);
@@ -882,6 +922,77 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Error in auth/me:", error);
     console.log('🔍 === AUTH ME END (ERROR) ===');
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Mobile-specific authentication endpoint for iOS/macOS
+app.get('/api/mobile/auth/me', async (req, res) => {
+  try {
+    console.log('📱 === MOBILE AUTH ME START ===');
+    console.log('📱 User-Agent:', req.headers['user-agent']);
+    
+    // Extract token from multiple sources for mobile compatibility
+    const token = req.cookies.token || 
+                  (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
+                  req.headers['x-auth-token'] ||
+                  req.body.token ||
+                  req.query.token;
+    
+    if (!token) {
+      console.log('❌ No token found in mobile auth/me');
+      return res.status(401).json({ 
+        error: 'Access token required',
+        debug: {
+          cookies: req.cookies,
+          authHeader: req.headers.authorization,
+          xAuthToken: req.headers['x-auth-token'],
+          userAgent: req.headers['user-agent']
+        }
+      });
+    }
+    
+    // Verify token
+    jwt.verify(token, JWT_SECRET, async (err, decoded) => {
+      if (err) {
+        console.log('❌ Token verification failed in mobile auth/me:', err.message);
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+      
+      const user = await findUserById(decoded.id);
+      if (!user) {
+        console.log('❌ User not found in mobile auth/me:', decoded.id);
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      console.log('✅ Mobile auth me successful for user:', user.username);
+      res.json({
+        id: user.id || user._id,
+        username: user.username,
+        role: user.role,
+        teamName: user.teamName,
+        coins: user.coins,
+        score: user.score,
+        totalMined: user.totalMined || 0,
+        lastMined: user.lastMined,
+        teamSettings: user.teamSettings || {
+          scoreboardVisible: true,
+          spinLimitations: {
+            lucky: { enabled: true, limit: 1 },
+            gamehelper: { enabled: true, limit: 1 },
+            challenge: { enabled: true, limit: 1 },
+            hightier: { enabled: true, limit: 1 },
+            lowtier: { enabled: true, limit: 1 },
+            random: { enabled: true, limit: 1 }
+          },
+          spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+        }
+      });
+      console.log('📱 === MOBILE AUTH ME END (SUCCESS) ===');
+    });
+  } catch (error) {
+    console.error("Error in mobile auth/me:", error);
+    console.log('📱 === MOBILE AUTH ME END (ERROR) ===');
     res.status(500).json({ error: "Internal server error" });
   }
 });
