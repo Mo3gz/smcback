@@ -2524,8 +2524,37 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     if (promoCode) {
       const promo = await findPromoCode(promoCode, req.user.id);
       if (promo) {
+        const originalCost = cost;
         cost = Math.floor(cost * (1 - promo.discount / 100));
         await markPromoCodeAsUsed(promoCode, req.user.id);
+        
+        // Send admin notification when promocode is used
+        const adminNotification = {
+          id: Date.now().toString(),
+          userId: null, // Admin notification
+          type: 'admin-action',
+          actionType: 'promo-code-used',
+          message: `Team ${user.teamName} used promo code "${promoCode}" (${promo.discount}% discount, saved ${originalCost - cost} coins)`,
+          timestamp: new Date().toISOString(),
+          read: false,
+          recipientType: 'admin',
+          metadata: {
+            teamId: req.user.id,
+            teamName: user.teamName,
+            promoCode: promoCode,
+            discount: promo.discount,
+            originalCost: originalCost,
+            finalCost: cost,
+            savedAmount: originalCost - cost,
+            spinType: spinType
+          }
+        };
+        
+        await addNotification(adminNotification);
+        // Emit to all admin clients
+        io.emit('admin-notification', adminNotification);
+        
+        console.log(`💳 Promo code "${promoCode}" used by team ${user.teamName}, saved ${originalCost - cost} coins`);
       }
     }
 
