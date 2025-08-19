@@ -1848,6 +1848,65 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Debug endpoint to test authentication
+app.get('/api/auth/test', async (req, res) => {
+  try {
+    console.log('🧪 === AUTH TEST START ===');
+    console.log('🧪 Headers:', JSON.stringify({
+      authorization: req.headers.authorization,
+      'x-auth-token': req.headers['x-auth-token'],
+      cookie: req.headers.cookie
+    }, null, 2));
+    
+    // Try to extract token
+    let token = null;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    } else if (req.headers['x-auth-token']) {
+      token = req.headers['x-auth-token'];
+    } else if (req.cookies.token) {
+      token = req.cookies.token;
+    }
+    
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        console.log('🧪 Token verified successfully:', decoded);
+        res.json({ 
+          success: true, 
+          message: 'Token is valid',
+          user: decoded,
+          tokenSource: req.headers.authorization ? 'authorization' : 
+                      req.headers['x-auth-token'] ? 'x-auth-token' : 'cookie'
+        });
+      } catch (verifyError) {
+        console.log('🧪 Token verification failed:', verifyError.message);
+        res.status(401).json({ 
+          success: false, 
+          message: 'Token is invalid',
+          error: verifyError.message 
+        });
+      }
+    } else {
+      console.log('🧪 No token found');
+      res.status(401).json({ 
+        success: false, 
+        message: 'No token provided',
+        headers: {
+          authorization: req.headers.authorization ? 'present' : 'missing',
+          'x-auth-token': req.headers['x-auth-token'] ? 'present' : 'missing',
+          cookie: req.cookies.token ? 'present' : 'missing'
+        }
+      });
+    }
+    
+    console.log('🧪 === AUTH TEST END ===');
+  } catch (error) {
+    console.error('🧪 Auth test error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // Token refresh endpoint for better cross-browser compatibility
 app.post('/api/auth/refresh', async (req, res) => {
   try {
