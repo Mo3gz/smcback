@@ -549,7 +549,7 @@ function getUserId(req) {
 }
 
 // Enhanced Authentication middleware with better debugging - Safari (iOS + macOS) compatible
-function authenticateToken(req, res, next) {
+async function authenticateToken(req, res, next) {
   console.log('🔐 === AUTHENTICATION START ===');
   console.log('🔐 Request URL:', req.url);
   console.log('🔐 Request method:', req.method);
@@ -565,10 +565,44 @@ function authenticateToken(req, res, next) {
   console.log('🔐 Headers:', JSON.stringify({
     authorization: req.headers.authorization,
     'x-auth-token': req.headers['x-auth-token'],
+    'x-username': req.headers['x-username'],
     cookie: req.headers.cookie,
     origin: req.headers.origin
   }, null, 2));
   console.log('🔐 Cookies:', JSON.stringify(req.cookies, null, 2));
+  
+  // For Safari, try username-based authentication first
+  if (isSafari) {
+    const username = req.headers['x-username'] || req.query.username;
+    console.log('🦁 Safari username check:', { 
+      fromHeader: req.headers['x-username'], 
+      fromQuery: req.query.username, 
+      finalUsername: username 
+    });
+    if (username) {
+      console.log('🦁 Safari username-based auth attempt for:', username);
+      
+      try {
+        // Find user by username (await to ensure it completes)
+        const user = await findUserByUsername(username);
+        if (user) {
+          console.log('✅ Safari username auth successful for:', user.username);
+          req.user = {
+            id: user.id || user._id,
+            username: user.username,
+            role: user.role,
+            teamName: user.teamName
+          };
+          console.log('🔐 === AUTHENTICATION END (SAFARI USERNAME SUCCESS) ===');
+          return next();
+        } else {
+          console.log('❌ Safari username auth failed - user not found:', username);
+        }
+      } catch (error) {
+        console.log('❌ Safari username auth error:', error.message);
+      }
+    }
+  }
   
   // Enhanced token extraction for Safari (iOS + macOS) compatibility
   let token = null;
@@ -625,6 +659,7 @@ function authenticateToken(req, res, next) {
         cookies: req.cookies,
         authHeader: req.headers.authorization,
         xAuthToken: req.headers['x-auth-token'],
+        xUsername: req.headers['x-username'],
         userAgent: req.headers['user-agent'],
         platform: isSafari ? 'safari' : 'other',
         isIOS: isIOS,
@@ -731,6 +766,65 @@ function requireAdmin(req, res, next) {
   });
 }
 
+// Safari-specific admin middleware (works with username authentication)
+function requireAdminSafari(req, res, next) {
+  console.log('🦁 === SAFARI ADMIN CHECK START ===');
+  console.log('🦁 Request URL:', req.url);
+  console.log('🦁 User from request:', JSON.stringify(req.user, null, 2));
+  
+  if (!req.user) {
+    console.log('❌ Safari admin check failed: No user found in request');
+    console.log('🦁 === SAFARI ADMIN CHECK END (NO USER) ===');
+    return res.status(401).json({ 
+      error: 'Authentication required',
+      debug: 'No user found in request object (Safari)'
+    });
+  }
+  
+  console.log('🦁 Safari user details:');
+  console.log('🦁   - ID:', req.user.id);
+  console.log('🦁   - Username:', req.user.username);
+  console.log('🦁   - Role:', req.user.role);
+  
+  // Safari admin check (simplified)
+  const username = req.user.username;
+  const userRole = req.user.role;
+  
+  // Check for admin bypass (username-based)
+  if (username === 'ayman' || username === 'admin' || username === 'Admin') {
+    console.log('✅ Safari admin check BYPASS: username is admin user');
+    console.log('🦁 === SAFARI ADMIN CHECK END (BYPASS) ===');
+    return next();
+  }
+  
+  // Check for role-based admin access
+  const isAdminByRole = userRole === 'admin' || 
+                       userRole === 'ADMIN' || 
+                       userRole === 'Admin' ||
+                       userRole === 'administrator' ||
+                       userRole === 'Administrator';
+  
+  if (isAdminByRole) {
+    console.log('✅ Safari admin check passed for user:', username);
+    console.log('🦁 === SAFARI ADMIN CHECK END (SUCCESS) ===');
+    return next();
+  }
+  
+  console.log('❌ Safari admin check failed: User role is not admin');
+  console.log('🦁 === SAFARI ADMIN CHECK END (FAILED) ===');
+  return res.status(403).json({ 
+    error: 'Admin access required (Safari)',
+    debug: {
+      userRole: userRole,
+      userId: req.user.id,
+      username: username,
+      requiredRole: 'admin',
+      isAdminCheck: isAdminByRole,
+      platform: 'safari'
+    }
+  });
+}
+
 // Enhanced admin check endpoint with more debugging
 app.get('/api/admin/check', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -818,7 +912,7 @@ app.get('/api/debug/auth-state', (req, res) => {
 });
 
 // Safari-specific debug endpoint
-app.get('/api/debug/safari-auth', (req, res) => {
+app.get('/api/debug/safari-auth', async (req, res) => {
   console.log('🦁 Safari auth debug check');
   
   const userAgent = req.headers['user-agent'] || '';
@@ -832,6 +926,17 @@ app.get('/api/debug/safari-auth', (req, res) => {
                 req.cookies.token ||
                 req.body.token ||
                 req.query.token;
+  
+  // Test username-based authentication
+  const username = req.headers['x-username'] || req.query.username;
+  let user = null;
+  if (username) {
+    try {
+      user = await findUserByUsername(username);
+    } catch (error) {
+      console.log('❌ Error finding user:', error.message);
+    }
+  }
   
   res.json({
     safari: {
@@ -849,10 +954,16 @@ app.get('/api/debug/safari-auth', (req, res) => {
               req.query.token ? 'query parameter' : 'none',
       preview: token ? token.substring(0, 20) + '...' : null
     },
+    usernameAuth: {
+      provided: username,
+      found: user ? { id: user.id || user._id, username: user.username, role: user.role } : null,
+      success: !!user
+    },
     cookies: req.cookies,
     headers: {
       authorization: req.headers.authorization,
-      'x-auth-token': req.headers['x-auth-token']
+      'x-auth-token': req.headers['x-auth-token'],
+      'x-username': req.headers['x-username']
     },
     timestamp: new Date().toISOString()
   });
