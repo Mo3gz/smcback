@@ -2348,6 +2348,10 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       io.to(req.user.id).emit('inventory-update');
       io.emit('inventory-update');
       
+      // Emit scoreboard update to refresh all users' data
+      const updatedUsers = await getAllUsers();
+      io.emit('scoreboard-update', updatedUsers);
+      
       return res.json({ 
         success: true,
         message: 'Country purchased successfully with borrowed coins!',
@@ -3865,8 +3869,8 @@ function getAvailableGames() {
 function getCardsByType(spinType) {
   const cards = {
     lucky: [
-      { name: "-50 Coins Instantly", type: 'lucky', effect: '-50 coins instantly', actionType: 'instant', coinChange: -50 },
-      { name: "+75 Coins Instantly", type: 'lucky', effect: '+75 coins instantly', actionType: 'instant', coinChange: 75 },
+      { name: "-50 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: -50 },
+      { name: "+75 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: 75 },
       { name: "Borrow coins to buy a country", type: 'lucky', effect: 'Balance may go negative, limit -200', actionType: 'admin', requiresTeamSelection: false },
       { name: "Pay 10 coins as border tax", type: 'lucky', effect: 'Pay 10 coins for each country you own', actionType: 'instant_tax' },
       { name: "Shield: 2 hours protection", type: 'lucky', effect: '2 hours protection in shift', actionType: 'admin', requiresTeamSelection: true },
