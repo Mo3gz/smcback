@@ -966,6 +966,30 @@ app.post('/api/auth/logout', (req, res) => {
   }
 });
 
+// Safari-specific logout endpoint (no cookies to clear)
+app.post('/api/safari/logout', (req, res) => {
+  try {
+    console.log('🦁 === SAFARI LOGOUT START ===');
+    console.log('🦁 Safari logout request received');
+    console.log('🦁 User-Agent:', req.headers['user-agent']);
+    
+    // Safari logout - no cookies to clear, just acknowledge
+    console.log('✅ Safari logout successful - no cookies to clear');
+    console.log('🦁 === SAFARI LOGOUT END ===');
+    res.json({ 
+      message: 'Safari logout successful - clear localStorage on frontend',
+      success: true,
+      safari: true
+    });
+  } catch (error) {
+    console.error('❌ Safari logout error:', error);
+    res.status(500).json({ 
+      error: 'Safari logout failed',
+      success: false 
+    });
+  }
+});
+
 app.post('/api/logout', (req, res) => {
   try {
     console.log('🚪 === LOGOUT START ===');
@@ -1057,6 +1081,97 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error('❌ Auth login error:', error);
     console.log('🔑 === AUTH LOGIN END (ERROR) ===');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Safari-specific login endpoint (no cookies, localStorage only)
+app.post('/api/safari/login', async (req, res) => {
+  try {
+    console.log('🦁 === SAFARI LOGIN START ===');
+    console.log('🦁 Safari login attempt:', { username: req.body.username });
+    console.log('🦁 User-Agent:', req.headers['user-agent']);
+    
+    const { username, password } = req.body;
+    if (!username || !password) {
+      console.log('❌ Missing credentials');
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    
+    const user = await findUserByUsername(username);
+    if (!user) {
+      console.log('❌ User not found:', username);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    console.log('✅ User found:', { 
+      username: user.username, 
+      role: user.role,
+      id: user.id || user._id 
+    });
+    
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      console.log('❌ Invalid password for user:', username);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    console.log('✅ Password verified for user:', username);
+    
+    // Enhanced token payload with debugging
+    const tokenPayload = { 
+      id: user.id || user._id, 
+      username: user.username, 
+      role: user.role, 
+      teamName: user.teamName 
+    };
+    
+    console.log('🦁 Creating Safari token with payload:', tokenPayload);
+    console.log('🦁 User role details:');
+    console.log('🦁   - Role:', user.role);
+    console.log('🦁   - Role type:', typeof user.role);
+    console.log('🦁   - Role length:', user.role ? user.role.length : 'undefined');
+    console.log('🦁   - Is admin role:', user.role === 'admin');
+    
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+    
+    // Verify token was created correctly
+    try {
+      const decodedToken = jwt.verify(token, JWT_SECRET);
+      console.log('🦁 Token verification test:', {
+        id: decodedToken.id,
+        username: decodedToken.username,
+        role: decodedToken.role,
+        roleType: typeof decodedToken.role
+      });
+    } catch (verifyError) {
+      console.error('❌ Safari token verification failed:', verifyError);
+    }
+    
+    // Safari-specific response (no cookies, only token in response)
+    const responseData = {
+      user: {
+        id: user.id || user._id,
+        username: user.username,
+        role: user.role,
+        teamName: user.teamName,
+        coins: user.coins,
+        score: user.score
+      },
+      token: token, // Token for localStorage
+      safari: true, // Flag to indicate Safari-specific response
+      message: 'Safari login successful - store token in localStorage'
+    };
+    
+    console.log('🦁 Safari login successful for user:', username);
+    console.log('🦁 Sending Safari response:', responseData);
+    console.log('🦁 === SAFARI LOGIN END (SUCCESS) ===');
+    
+    // Don't set cookies for Safari - let frontend handle localStorage
+    res.json(responseData);
+  } catch (error) {
+    console.error('❌ Safari login error:', error);
+    console.log('🦁 === SAFARI LOGIN END (ERROR) ===');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
