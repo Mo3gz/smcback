@@ -628,11 +628,12 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Enhanced Admin middleware with better debugging
+// Enhanced Admin middleware with better debugging - Fixed for admin access
 function requireAdmin(req, res, next) {
   console.log('🔐 === ADMIN CHECK START ===');
   console.log('🔐 Request URL:', req.url);
   console.log('🔐 User from token:', JSON.stringify(req.user, null, 2));
+  
   if (!req.user) {
     console.log('❌ Admin check failed: No user found in request');
     console.log('🔐 === ADMIN CHECK END (NO USER) ===');
@@ -641,39 +642,61 @@ function requireAdmin(req, res, next) {
       debug: 'No user found in request object'
     });
   }
+  
   console.log('🔐 User details:');
   console.log('🔐   - ID:', req.user.id);
   console.log('🔐   - Username:', req.user.username);
   console.log('🔐   - Role:', req.user.role);
   console.log('🔐   - Role type:', typeof req.user.role);
-  if (req.user.username === 'ayman') {
-    console.log('✅ Admin check BYPASS: username is ayman');
+  console.log('🔐   - Role length:', req.user.role ? req.user.role.length : 'undefined');
+  
+  // Enhanced admin check with multiple conditions
+  const username = req.user.username;
+  const userRole = req.user.role;
+  
+  // Check for admin bypass (username-based)
+  if (username === 'ayman' || username === 'admin' || username === 'Admin') {
+    console.log('✅ Admin check BYPASS: username is admin user');
     console.log('🔐 === ADMIN CHECK END (BYPASS) ===');
     return next();
   }
-  const userRole = req.user.role;
-  const isAdmin = userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin';
+  
+  // Check for role-based admin access
+  const isAdminByRole = userRole === 'admin' || 
+                       userRole === 'ADMIN' || 
+                       userRole === 'Admin' ||
+                       userRole === 'administrator' ||
+                       userRole === 'Administrator';
+  
   console.log('🔐 Role check details:');
   console.log('🔐   - User role:', userRole);
   console.log('🔐   - Is admin (strict):', userRole === 'admin');
-  console.log('🔐   - Is admin (case insensitive):', isAdmin);
-  if (!isAdmin) {
-    console.log('❌ Admin check failed: User role is not admin');
-    console.log('🔐 === ADMIN CHECK END (FAILED) ===');
-    return res.status(403).json({ 
-      error: 'Admin access required',
-      debug: {
-        userRole: userRole,
-        userId: req.user.id,
-        username: req.user.username,
-        requiredRole: 'admin',
-        isAdminCheck: isAdmin
-      }
-    });
+  console.log('🔐   - Is admin (case insensitive):', isAdminByRole);
+  console.log('🔐   - Role comparison results:');
+  console.log('🔐     - admin:', userRole === 'admin');
+  console.log('🔐     - ADMIN:', userRole === 'ADMIN');
+  console.log('🔐     - Admin:', userRole === 'Admin');
+  
+  if (isAdminByRole) {
+    console.log('✅ Admin check passed for user:', username);
+    console.log('🔐 === ADMIN CHECK END (SUCCESS) ===');
+    return next();
   }
-  console.log('✅ Admin check passed for user:', req.user.username);
-  console.log('🔐 === ADMIN CHECK END (SUCCESS) ===');
-  next();
+  
+  console.log('❌ Admin check failed: User role is not admin');
+  console.log('🔐 === ADMIN CHECK END (FAILED) ===');
+  return res.status(403).json({ 
+    error: 'Admin access required',
+    debug: {
+      userRole: userRole,
+      userId: req.user.id,
+      username: username,
+      requiredRole: 'admin',
+      isAdminCheck: isAdminByRole,
+      roleType: typeof userRole,
+      roleLength: userRole ? userRole.length : 'undefined'
+    }
+  });
 }
 
 // Enhanced admin check endpoint with more debugging
@@ -749,6 +772,75 @@ app.get('/api/debug/auth-state', (req, res) => {
               req.headers['user-agent']?.includes('iPhone') || req.headers['user-agent']?.includes('iPad') ? 'ios' : 'other',
     timestamp: new Date().toISOString()
   });
+});
+
+// Debug endpoint to check user role and admin status
+app.get('/api/debug/user-role', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 === USER ROLE DEBUG START ===');
+    console.log('🔍 User from token:', JSON.stringify(req.user, null, 2));
+    
+    const user = await findUserById(req.user.id);
+    console.log('🔍 User from database:', JSON.stringify(user, null, 2));
+    
+    const username = req.user.username;
+    const userRole = req.user.role;
+    const dbUserRole = user?.role;
+    
+    // Check admin conditions
+    const isAdminByUsername = username === 'ayman' || username === 'admin' || username === 'Admin';
+    const isAdminByRole = userRole === 'admin' || 
+                         userRole === 'ADMIN' || 
+                         userRole === 'Admin' ||
+                         userRole === 'administrator' ||
+                         userRole === 'Administrator';
+    const isAdminByDbRole = dbUserRole === 'admin' || 
+                           dbUserRole === 'ADMIN' || 
+                           dbUserRole === 'Admin' ||
+                           dbUserRole === 'administrator' ||
+                           dbUserRole === 'Administrator';
+    
+    console.log('🔍 Admin check results:');
+    console.log('🔍   - Username:', username);
+    console.log('🔍   - Token role:', userRole);
+    console.log('🔍   - DB role:', dbUserRole);
+    console.log('🔍   - Is admin by username:', isAdminByUsername);
+    console.log('🔍   - Is admin by token role:', isAdminByRole);
+    console.log('🔍   - Is admin by DB role:', isAdminByDbRole);
+    
+    res.json({
+      user: {
+        id: req.user.id,
+        username: username,
+        role: userRole,
+        roleType: typeof userRole,
+        roleLength: userRole ? userRole.length : 'undefined'
+      },
+      databaseUser: user ? {
+        id: user.id || user._id,
+        username: user.username,
+        role: dbUserRole,
+        roleType: typeof dbUserRole
+      } : null,
+      adminChecks: {
+        isAdminByUsername: isAdminByUsername,
+        isAdminByTokenRole: isAdminByRole,
+        isAdminByDbRole: isAdminByDbRole,
+        wouldPassAdminCheck: isAdminByUsername || isAdminByRole
+      },
+      debug: {
+        tokenRole: userRole,
+        dbRole: dbUserRole,
+        rolesMatch: userRole === dbUserRole,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+    console.log('🔍 === USER ROLE DEBUG END ===');
+  } catch (error) {
+    console.error('❌ User role debug error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Helper to get cookie options based on environment - Enhanced for macOS/iOS compatibility
@@ -1027,14 +1119,37 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     console.log('✅ Password verified for user:', username);
+    
+    // Enhanced token payload with debugging
     const tokenPayload = { 
       id: user.id || user._id, 
       username: user.username, 
       role: user.role, 
       teamName: user.teamName 
     };
+    
     console.log('🔑 Creating token with payload:', tokenPayload);
+    console.log('🔑 User role details:');
+    console.log('🔑   - Role:', user.role);
+    console.log('🔑   - Role type:', typeof user.role);
+    console.log('🔑   - Role length:', user.role ? user.role.length : 'undefined');
+    console.log('🔑   - Is admin role:', user.role === 'admin');
+    
     const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+    
+    // Verify token was created correctly
+    try {
+      const decodedToken = jwt.verify(token, JWT_SECRET);
+      console.log('🔑 Token verification test:', {
+        id: decodedToken.id,
+        username: decodedToken.username,
+        role: decodedToken.role,
+        roleType: typeof decodedToken.role
+      });
+    } catch (verifyError) {
+      console.error('❌ Token verification failed:', verifyError);
+    }
+    
     const cookieOptions = getCookieOptions();
     res.cookie('token', token, cookieOptions);
     console.log('✅ Login successful for user:', username);
@@ -2322,6 +2437,14 @@ app.post('/api/debug/admin-test', async (req, res) => {
       return res.status(401).json({ error: 'Invalid password' });
     }
     
+    // Enhanced admin check
+    const isAdmin = user.role === 'admin' || 
+                   user.role === 'ADMIN' || 
+                   user.role === 'Admin' ||
+                   user.username === 'ayman' ||
+                   user.username === 'admin' ||
+                   user.username === 'Admin';
+    
     res.json({
       success: true,
       user: {
@@ -2329,11 +2452,53 @@ app.post('/api/debug/admin-test', async (req, res) => {
         username: user.username,
         role: user.role,
         teamName: user.teamName,
-        isAdmin: user.role === 'admin'
+        isAdmin: isAdmin,
+        roleType: typeof user.role,
+        roleLength: user.role ? user.role.length : 'undefined'
+      },
+      adminChecks: {
+        roleCheck: user.role === 'admin',
+        usernameCheck: user.username === 'ayman',
+        combinedCheck: isAdmin
       }
     });
   } catch (error) {
     console.error('Admin test error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Simple admin test endpoint (no authentication required)
+app.get('/api/debug/admin-test-simple', async (req, res) => {
+  try {
+    console.log('🔧 Simple admin test endpoint called');
+    
+    // Get all users and check their admin status
+    const allUsers = await getAllUsers();
+    const adminUsers = allUsers.filter(user => {
+      const isAdmin = user.role === 'admin' || 
+                     user.role === 'ADMIN' || 
+                     user.role === 'Admin' ||
+                     user.username === 'ayman' ||
+                     user.username === 'admin' ||
+                     user.username === 'Admin';
+      return isAdmin;
+    });
+    
+    res.json({
+      message: 'Admin test endpoint works!',
+      totalUsers: allUsers.length,
+      adminUsers: adminUsers.map(user => ({
+        id: user.id || user._id,
+        username: user.username,
+        role: user.role,
+        roleType: typeof user.role,
+        isAdmin: true
+      })),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Simple admin test error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
