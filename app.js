@@ -728,6 +728,30 @@ function getCookieOptions() {
   };
 }
 
+// Add auth logout route for compatibility
+app.post('/api/auth/logout', (req, res) => {
+  try {
+    console.log('🚪 === AUTH LOGOUT START ===');
+    console.log('🚪 Auth logout request received');
+    const cookieOptions = getCookieOptions();
+    res.clearCookie('token', cookieOptions);
+    res.clearCookie('authToken', cookieOptions);
+    res.clearCookie('session', cookieOptions);
+    console.log('✅ Auth logout successful - cookies cleared');
+    console.log('🚪 === AUTH LOGOUT END ===');
+    res.json({ 
+      message: 'Logged out successfully',
+      success: true 
+    });
+  } catch (error) {
+    console.error('❌ Auth logout error:', error);
+    res.status(500).json({ 
+      error: 'Logout failed',
+      success: false 
+    });
+  }
+});
+
 app.post('/api/logout', (req, res) => {
   try {
     console.log('🚪 === LOGOUT START ===');
@@ -763,6 +787,103 @@ app.get('/api/debug/auth-state', (req, res) => {
     hasToken: !!(req.cookies.token || req.headers.authorization || req.headers['x-auth-token']),
     timestamp: new Date().toISOString()
   });
+});
+
+// Add auth routes for compatibility
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    console.log('🔑 === AUTH LOGIN START ===');
+    console.log('🔑 Auth login attempt:', { username: req.body.username });
+    const { username, password } = req.body;
+    if (!username || !password) {
+      console.log('❌ Missing credentials');
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+    const user = await findUserByUsername(username);
+    if (!user) {
+      console.log('❌ User not found:', username);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    console.log('✅ User found:', { 
+      username: user.username, 
+      role: user.role,
+      id: user.id || user._id 
+    });
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      console.log('❌ Invalid password for user:', username);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    console.log('✅ Password verified for user:', username);
+    const tokenPayload = { 
+      id: user.id || user._id, 
+      username: user.username, 
+      role: user.role, 
+      teamName: user.teamName 
+    };
+    console.log('🔑 Creating token with payload:', tokenPayload);
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '24h' });
+    const cookieOptions = getCookieOptions();
+    res.cookie('token', token, cookieOptions);
+    console.log('✅ Auth login successful for user:', username);
+    const responseData = {
+      user: {
+        id: user.id || user._id,
+        username: user.username,
+        role: user.role,
+        teamName: user.teamName,
+        coins: user.coins,
+        score: user.score
+      },
+      token: token // Include token for localStorage fallback
+    };
+    console.log('🔑 Sending auth response:', responseData);
+    console.log('🔑 === AUTH LOGIN END (SUCCESS) ===');
+    res.json(responseData);
+  } catch (error) {
+    console.error('❌ Auth login error:', error);
+    console.log('🔑 === AUTH LOGIN END (ERROR) ===');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 === AUTH ME START ===');
+    const user = await findUserById(req.user.id);
+    if (!user) {
+      console.log('❌ User not found in auth/me:', req.user.id);
+      return res.status(404).json({ error: "User not found" });
+    }
+    console.log('✅ Auth me successful for user:', user.username);
+    res.json({
+      id: user.id || user._id,
+      username: user.username,
+      role: user.role,
+      teamName: user.teamName,
+      coins: user.coins,
+      score: user.score,
+      totalMined: user.totalMined || 0,
+      lastMined: user.lastMined,
+      teamSettings: user.teamSettings || {
+        scoreboardVisible: true,
+        spinLimitations: {
+          lucky: { enabled: true, limit: 1 },
+          gamehelper: { enabled: true, limit: 1 },
+          challenge: { enabled: true, limit: 1 },
+          hightier: { enabled: true, limit: 1 },
+          lowtier: { enabled: true, limit: 1 },
+          random: { enabled: true, limit: 1 }
+        },
+        spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+      }
+    });
+    console.log('🔍 === AUTH ME END (SUCCESS) ===');
+  } catch (error) {
+    console.error("Error in auth/me:", error);
+    console.log('🔍 === AUTH ME END (ERROR) ===');
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 app.post('/api/login', async (req, res) => {
