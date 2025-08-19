@@ -2436,14 +2436,18 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         break;
 
       case 'random_gift':
-        // Give 50 coins to random team
+        // Give 50 coins to random team (exclude admins and the team who spun)
         const allUsers = await getAllUsers();
-        const otherUsers = allUsers.filter(u => u.id !== req.user.id);
-        if (otherUsers.length > 0) {
-          const randomUser = otherUsers[Math.floor(Math.random() * otherUsers.length)];
+        const eligibleUsers = allUsers.filter(u => 
+          u.id !== req.user.id && // Exclude the team who spun
+          u.role !== 'admin' // Exclude admins
+        );
+        
+        if (eligibleUsers.length > 0) {
+          const randomUser = eligibleUsers[Math.floor(Math.random() * eligibleUsers.length)];
           await updateUserById(randomUser.id, { coins: randomUser.coins + 50 });
           
-          // Notify both teams
+          // Send notification to the team that received the coins
           const giftNotification = {
             id: Date.now().toString(),
             userId: randomUser.id,
@@ -2454,9 +2458,23 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
             recipientType: 'user'
           };
           await addNotification(giftNotification);
+          
+          // Send socket notification to the team that received the coins
           io.to(randomUser.id).emit('notification', giftNotification);
           
+          // Also send user-update to refresh their coin count in real-time
+          io.to(randomUser.id).emit('user-update', {
+            id: randomUser.id,
+            teamName: randomUser.teamName,
+            coins: randomUser.coins + 50,
+            score: randomUser.score
+          });
+          
           additionalData.giftedTeam = randomUser.teamName;
+          console.log(`🎁 ${user.teamName} gave 50 coins to ${randomUser.teamName} via spin`);
+        } else {
+          console.log(`🎁 No eligible teams found for random gift (all teams are admins or only the spinning team exists)`);
+          additionalData.giftedTeam = null;
         }
         isInstantAction = true;
         break;
