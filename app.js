@@ -2578,7 +2578,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       case 'instant_tax':
         // Pay 10 coins per owned country
         const ownedCountries = await getOwnedCountriesCount(req.user.id);
-        const taxAmount = ownedCountries * 10;
+        const taxAmount = ownedCountries * 2;
         finalCoins = newCoins - taxAmount;
         await updateUserById(req.user.id, { coins: finalCoins });
         isInstantAction = true;
@@ -3869,32 +3869,34 @@ function getAvailableGames() {
 function getCardsByType(spinType) {
   const cards = {
     lucky: [
-      { name: "-50 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: -50 },
-      { name: "+75 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: 75 },
+      { name: "-20 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: -20 },
+      { name: "+100 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: 100 },
       { name: "Borrow coins to buy a country", type: 'lucky', effect: 'Balance may go negative, limit -200', actionType: 'admin', requiresTeamSelection: false },
-      { name: "Pay 10 coins as border tax", type: 'lucky', effect: 'Pay 10 coins for each country you own', actionType: 'instant_tax' },
+      { name: "Pay 2 coins as border tax", type: 'lucky', effect: 'Pay 2 coins for each country you own', actionType: 'instant_tax' },
       { name: "Game Protection", type: 'lucky', effect: 'Protection for selected game', actionType: 'admin', requiresGameSelection: true },
       { name: "+50 Coins to random team", type: 'lucky', effect: '+50 coins given to another random team', actionType: 'random_gift' }
     ],
     gamehelper: [
       { name: "Secret Info", type: 'gamehelper', effect: 'Choose game: Instantly reveals opponent & game details', actionType: 'admin', requiresGameSelection: true },
-      { name: "Robin Hood", type: 'gamehelper', effect: 'Choose game & team: Steal 100 coins from them, gain 50 coins', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
-      { name: "Avenger", type: 'gamehelper', effect: 'Choose game & team: Alliance proposal (+50 each if accepted)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
-      { name: "Betrayal", type: 'gamehelper', effect: 'Choose game: Counter alliance betrayals (+50 if betrayed & win)', actionType: 'admin', requiresGameSelection: true }
+      { name: "Robin Hood", type: 'gamehelper', effect: 'Choose game & team: Steal 100 coins from them, If they won', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Avenger", type: 'gamehelper', effect: 'Choose game & team: Alliance proposal (+100 each if accepted)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Betrayal", type: 'gamehelper', effect: 'Choose game: Counter alliance betrayals (+100 if betrayed & win)', actionType: 'admin', requiresGameSelection: true }
     ],
     challenge: [
       { name: "Speed Buy", type: 'challenge', effect: '10 minutes to buy a country (+50 reward)', actionType: 'speed_buy' },
-      { name: "Freeze Player", type: 'challenge', effect: 'Choose game & team: Target player frozen (+50 to you)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
+      { name: "Freeze Player", type: 'challenge', effect: 'Choose game: Judger decides: Freeze one player from your team (+75 coins to you)', actionType: 'admin', requiresGameSelection: true},
       { name: "Mystery Question", type: 'challenge', effect: 'Spiritual MCQ: 13sec timer (+100 correct, no penalty wrong)', actionType: 'mcq', isInstantChallenge: true },
-      { name: "Silent Game", type: 'challenge', effect: 'Choose game: Judge decides result (+50 or -30)', actionType: 'admin', requiresGameSelection: true }
+      { name: "Silent Game", type: 'challenge', effect: 'Choose game: Judge decides result (+150 or -100)', actionType: 'admin', requiresGameSelection: true }
     ],
     hightier: [
-      { name: "+50 Coins Instantly", type: 'hightier', effect: '+50 coins instantly', actionType: 'instant', coinChange: 50 },
-      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game 1-11: If tied, next game has double consequences', actionType: 'admin', requiresGameSelection: true, maxGame: 11 }
+      { name: "+75 Coins Instantly", type: 'hightier', effect: '+75 coins instantly', actionType: 'instant', coinChange: 75 },
+      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +50 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true},
+      { name: "-20 Coins Instantly", type: 'hightier', effect: '-10 coins instantly', actionType: 'instant', coinChange: -20 }
     ],
     lowtier: [
       { name: "+100 Coins Instantly", type: 'lowtier', effect: '+100 coins instantly', actionType: 'instant', coinChange: 100 },
-      { name: "-5 Coins Instantly", type: 'lowtier', effect: '-5 coins instantly', actionType: 'instant', coinChange: -5 }
+      { name: "-10 Coins Instantly", type: 'lowtier', effect: '-10 coins instantly', actionType: 'instant', coinChange: -10 },
+      { name: "Victory Multiplier", type: 'lowtier', effect: 'Choose a game: If your team wins, you earn x1.5 coins +120 Bonus', actionType: 'admin', requiresGameSelection: true}
     ],
     random: [
       { name: "Lucky Random", type: 'random', effect: 'Random card from Lucky, Game Helper, or Challenge', actionType: 'random_category' }
