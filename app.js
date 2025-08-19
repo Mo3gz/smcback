@@ -1000,6 +1000,7 @@ app.post('/api/spin/reset-when-completed', authenticateToken, async (req, res) =
       const resetTeamSettings = {
         ...user.teamSettings,
         spinCounts: {
+          regular: 0,
           lucky: 0,
           gamehelper: 0,
           challenge: 0,
@@ -2493,6 +2494,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       finalTeamSettings = {
         ...currentUser.teamSettings,
         spinCounts: {
+          regular: 0,
           lucky: 0,
           gamehelper: 0,
           challenge: 0,
