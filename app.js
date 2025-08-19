@@ -2515,32 +2515,13 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       if (io) {
         console.log(`📡 Emitting spin-counts-reset socket event to user ${req.user.id}`);
         
-        // Emit to all clients (broadcast)
-        io.emit('spin-counts-reset', { 
-          userId: req.user.id,
-          message: `🎉 Congratulations! You've completed ALL your enabled spin types (${enabledSpinTypes.length} total). All your spin counts have been reset to 0 and you can continue spinning!`
-        });
-        
-        // Also emit specifically to the user's room
+        // Send simple notification to the user
         io.to(req.user.id).emit('spin-counts-reset', { 
           userId: req.user.id,
-          message: `🎉 Congratulations! You've completed ALL your enabled spin types (${enabledSpinTypes.length} total). All your spin counts have been reset to 0 and you can continue spinning!`
+          message: `Limit Reseted`
         });
         
-        // Also send a more detailed notification to the user's notification system
-        const resetNotification = {
-          id: Date.now().toString(),
-          userId: req.user.id,
-          type: 'spin-reset',
-          message: `🎯 Spin Reset Complete! You've finished all ${enabledSpinTypes.length} enabled spin types. All counts reset to 0.`,
-          timestamp: new Date().toISOString(),
-          read: false,
-          recipientType: 'user'
-        };
-        await addNotification(resetNotification);
-        io.to(req.user.id).emit('notification', resetNotification);
-        
-        console.log(`📡 Spin reset socket events emitted successfully`);
+        console.log(`📡 Spin reset socket event emitted successfully`);
       } else {
         console.log(`❌ Socket.io not available for spin reset notification`);
       }
