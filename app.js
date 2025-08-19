@@ -5047,16 +5047,12 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
       lastMined: now.toISOString()
     });
 
-    // Create user notification with breakdown
-    const breakdownMessage = countriesWithEarnings.map(c => 
-      `${c.countryName}: ${c.earned} coins`
-    ).join(', ');
-
+    // Create user notification
     const userNotification = {
       id: Date.now().toString(),
       userId: req.user.id,
       type: 'mining',
-      message: `You mined ${totalEarned} coins! (${breakdownMessage})`,
+      message: `You mined ${totalEarned} coins!`,
       timestamp: now.toISOString(),
       read: false,
       recipientType: 'user',
