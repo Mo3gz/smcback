@@ -1357,6 +1357,66 @@ app.get('/api/safari/auth/me', async (req, res) => {
   }
 });
 
+// SIMPLE Safari authentication - NO TOKEN REQUIRED (for testing)
+app.get('/api/safari/simple-auth', async (req, res) => {
+  try {
+    console.log('🦁 === SAFARI SIMPLE AUTH START ===');
+    console.log('🦁 User-Agent:', req.headers['user-agent']);
+    
+    // Get username from query parameter or header
+    const username = req.query.username || req.headers['x-username'];
+    
+    if (!username) {
+      console.log('❌ No username provided in Safari simple auth');
+      return res.status(400).json({ 
+        error: 'Username required',
+        debug: {
+          query: req.query,
+          headers: req.headers,
+          userAgent: req.headers['user-agent']
+        }
+      });
+    }
+    
+    const user = await findUserByUsername(username);
+    if (!user) {
+      console.log('❌ User not found in Safari simple auth:', username);
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    console.log('✅ Safari simple auth successful for user:', user.username);
+    res.json({
+      id: user.id || user._id,
+      username: user.username,
+      role: user.role,
+      teamName: user.teamName,
+      coins: user.coins,
+      score: user.score,
+      totalMined: user.totalMined || 0,
+      lastMined: user.lastMined,
+      teamSettings: user.teamSettings || {
+        scoreboardVisible: true,
+        spinLimitations: {
+          lucky: { enabled: true, limit: 1 },
+          gamehelper: { enabled: true, limit: 1 },
+          challenge: { enabled: true, limit: 1 },
+          hightier: { enabled: true, limit: 1 },
+          lowtier: { enabled: true, limit: 1 },
+          random: { enabled: true, limit: 1 }
+        },
+        spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+      },
+      safari: true,
+      message: 'Safari simple auth successful - no token required'
+    });
+    console.log('🦁 === SAFARI SIMPLE AUTH END (SUCCESS) ===');
+  } catch (error) {
+    console.error("Error in Safari simple auth:", error);
+    console.log('🦁 === SAFARI SIMPLE AUTH END (ERROR) ===');
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.post('/api/login', async (req, res) => {
   try {
     console.log('🔑 === LOGIN START ===');
