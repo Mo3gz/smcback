@@ -3521,6 +3521,7 @@ async function migrateUserTeamSettings() {
 
 // Global country visibility settings - admin can hide/show country ownership
 let countryVisibilitySettings = {};
+let fiftyCoinsCountriesHidden = false; // Global setting for 50 coins countries visibility
 
 // Helper function to get available games
 function getAvailableGames() {
@@ -4443,6 +4444,41 @@ app.post('/api/admin/countries/visibility', authenticateToken, requireAdmin, asy
     });
   } catch (error) {
     console.error('Toggle country visibility error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin toggle 50 coins countries visibility globally
+app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { hidden } = req.body;
+    
+    if (typeof hidden !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid visibility status' });
+    }
+    
+    fiftyCoinsCountriesHidden = hidden;
+    
+    // Emit to all clients about 50 coins countries visibility change
+    io.emit('fifty-coins-countries-visibility-update', { hidden });
+    
+    // Also emit countries update to refresh the map
+    const allCountries = await getAllCountries();
+    const filteredCountries = allCountries.filter(country => {
+      const individualVisible = countryVisibilitySettings[country.id] !== false;
+      const fiftyCoinsVisible = !fiftyCoinsCountriesHidden || country.cost !== 50;
+      return individualVisible && fiftyCoinsVisible;
+    });
+    
+    io.emit('countries-update', filteredCountries);
+    
+    res.json({ 
+      success: true, 
+      hidden: fiftyCoinsCountriesHidden,
+      message: `50 coins countries are now ${hidden ? 'hidden' : 'visible'}`
+    });
+  } catch (error) {
+    console.error('Toggle 50 coins countries visibility error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
