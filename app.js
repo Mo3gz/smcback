@@ -2669,7 +2669,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         const questions = JSON.parse(fs.readFileSync('./spiritual-questions.json', 'utf8'));
         const randomQuestion = questions.questions[Math.floor(Math.random() * questions.questions.length)];
         additionalData.question = randomQuestion;
-        additionalData.timeLimit = 10; // 10 seconds
+        additionalData.timeLimit = 13; // 13 seconds
         break;
     }
 
@@ -3885,7 +3885,7 @@ function getCardsByType(spinType) {
     challenge: [
       { name: "Speed Buy", type: 'challenge', effect: '10 minutes to buy a country (+50 reward)', actionType: 'speed_buy' },
       { name: "Freeze Player", type: 'challenge', effect: 'Choose game & team: Target player frozen (+50 to you)', actionType: 'admin', requiresGameSelection: true, requiresTeamSelection: true },
-      { name: "Mystery Question", type: 'challenge', effect: 'Spiritual MCQ: 10sec timer (+15 correct, -10 wrong)', actionType: 'mcq', isInstantChallenge: true },
+      { name: "Mystery Question", type: 'challenge', effect: 'Spiritual MCQ: 13sec timer (+100 correct, no penalty wrong)', actionType: 'mcq', isInstantChallenge: true },
       { name: "Silent Game", type: 'challenge', effect: 'Choose game: Judge decides result (+50 or -30)', actionType: 'admin', requiresGameSelection: true }
     ],
     hightier: [
@@ -4010,7 +4010,7 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
     }
     
     const isCorrect = answer === question.correct;
-    let rewardCoins = isCorrect ? 15 : -10;
+    let rewardCoins = isCorrect ? 100 : 0; // No penalty for wrong answers, +100 for correct
     
     const newCoins = user.coins + rewardCoins;
     await updateUserById(req.user.id, { coins: newCoins });
@@ -4029,8 +4029,8 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
       userId: req.user.id,
       type: 'mcq-reward',
       message: isCorrect 
-        ? `Correct answer! You earned ${rewardCoins} coins.`
-        : `Wrong answer! You lost ${Math.abs(rewardCoins)} coins.`,
+        ? `Correct answer! You earned ${rewardCoins} coins!`
+        : `Wrong answer! No penalty - try again next time.`,
       timestamp: new Date().toISOString(),
       read: false,
       recipientType: 'user'
