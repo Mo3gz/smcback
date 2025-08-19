@@ -981,8 +981,9 @@ app.post('/api/spin/reset-when-completed', authenticateToken, async (req, res) =
     const currentSpinCounts = user.teamSettings?.spinCounts || {};
 
     // Check if ALL ENABLED spin types have reached their limits (according to admin settings)
+    // Explicitly exclude 'regular' spin type as requested by user
     const enabledSpinTypes = Object.entries(spinLimitations)
-      .filter(([type, lim]) => lim.enabled && lim.limit > 0)
+      .filter(([type, lim]) => lim.enabled && lim.limit > 0 && type !== 'regular')
       .map(([type]) => type);
     
     const completedSpinTypes = enabledSpinTypes.filter(type => {
@@ -1075,8 +1076,9 @@ app.post('/api/debug/test-spin-reset', authenticateToken, async (req, res) => {
     console.log('🔄 Current spin counts:', currentSpinCounts);
     
     // Simulate the reset check logic
+    // Explicitly exclude 'regular' spin type as requested by user
     const enabledSpinTypes = Object.entries(spinLimitations)
-      .filter(([type, lim]) => lim.enabled && lim.limit > 0)
+      .filter(([type, lim]) => lim.enabled && lim.limit > 0 && type !== 'regular')
       .map(([type]) => type);
     
     const completedSpinTypes = enabledSpinTypes.filter(type => 
@@ -2440,8 +2442,9 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     }
     
     // Check if ALL ENABLED spin types have reached their limits (according to admin settings)
+    // Explicitly exclude 'regular' spin type as requested by user
     const enabledSpinTypes = Object.entries(spinLimitations)
-      .filter(([type, lim]) => lim.enabled && lim.limit > 0)
+      .filter(([type, lim]) => lim.enabled && lim.limit > 0 && type !== 'regular')
       .map(([type]) => type);
     
     const completedSpinTypes = enabledSpinTypes.filter(type => {
