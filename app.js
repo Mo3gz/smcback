@@ -3891,12 +3891,12 @@ function getCardsByType(spinType) {
     hightier: [
       { name: "+75 Coins Instantly", type: 'hightier', effect: '+75 coins instantly', actionType: 'instant', coinChange: 75 },
       { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +50 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true},
-      { name: "-20 Coins Instantly", type: 'hightier', effect: '-10 coins instantly', actionType: 'instant', coinChange: -20 }
+      { name: "-20 Coins Instantly", type: 'hightier', effect: '-20 coins instantly', actionType: 'instant', coinChange: -20 }
     ],
     lowtier: [
       { name: "+100 Coins Instantly", type: 'lowtier', effect: '+100 coins instantly', actionType: 'instant', coinChange: 100 },
       { name: "-10 Coins Instantly", type: 'lowtier', effect: '-10 coins instantly', actionType: 'instant', coinChange: -10 },
-      { name: "Victory Multiplier", type: 'lowtier', effect: 'Choose a game: If your team wins, you earn x1.5 coins +120 Bonus', actionType: 'admin', requiresGameSelection: true}
+      { name: "Victory Multiplier", type: 'lowtier', effect: 'Choose a game: If your team wins, you earn x1.5 coins', actionType: 'admin', requiresGameSelection: true}
     ],
     random: [
       { name: "Lucky Random", type: 'random', effect: 'Random card from Lucky, Game Helper, or Challenge', actionType: 'random_category' }
@@ -4535,6 +4535,23 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
         lowtier: 0,
         random: 0
       };
+      
+      // Send notification to user about spin count reset
+      const resetNotification = {
+        id: Date.now().toString(),
+        userId: teamId,
+        type: 'spin-counts-reset',
+        message: 'Your spin counts have been reset by admin.',
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'user'
+      };
+      await addNotification(resetNotification);
+      
+      // Send socket notification to the user
+      io.to(teamId).emit('notification', resetNotification);
+      
+      console.log(`🔄 Admin reset spin counts for team ${user.teamName}`);
     } else {
       // Check if user has exceeded any new limits and handle accordingly
       const currentSpinCounts = currentSettings.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
@@ -4583,6 +4600,14 @@ app.put('/api/admin/teams/:teamId/settings', authenticateToken, requireAdmin, as
         userId: teamId, 
         teamSettings: updatedSettings 
       });
+      
+      // Emit specific spin count reset event if counts were reset
+      if (resetSpinCounts) {
+        io.emit('spin-counts-reset', { 
+          userId: teamId,
+          teamName: user.teamName
+        });
+      }
     }
     
     res.json({ success: true, settings: updatedSettings });
@@ -4643,6 +4668,23 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
             lowtier: 0,
             random: 0
           };
+          
+          // Send notification to user about spin count reset
+          const resetNotification = {
+            id: Date.now().toString(),
+            userId: user.id || user._id,
+            type: 'spin-counts-reset',
+            message: 'Your spin counts have been reset by admin.',
+            timestamp: new Date().toISOString(),
+            read: false,
+            recipientType: 'user'
+          };
+          await addNotification(resetNotification);
+          
+          // Send socket notification to the user
+          io.to(user.id || user._id).emit('notification', resetNotification);
+          
+          console.log(`🔄 Admin reset spin counts for team ${user.teamName}`);
         } else {
           // Check if user has exceeded any new limits and handle accordingly
           const currentSpinCounts = currentSettings.spinCounts || { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 };
@@ -4736,6 +4778,14 @@ app.put('/api/admin/teams/settings/all', authenticateToken, requireAdmin, async 
           userId: user.id || user._id, 
           teamSettings: finalSettings 
         });
+        
+        // Emit specific spin count reset event if counts were reset
+        if (resetSpinCounts) {
+          io.emit('spin-counts-reset', { 
+            userId: user.id || user._id,
+            teamName: user.teamName
+          });
+        }
       });
     }
     
