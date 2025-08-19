@@ -2024,6 +2024,36 @@ app.get('/api/countries', async (req, res) => {
   }
 });
 
+// Endpoint to get available countries for borrowing (unowned countries)
+app.get('/api/countries/available-for-borrow', authenticateToken, async (req, res) => {
+  try {
+    const user = await findUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const countries = await getAllCountries();
+    
+    // Filter for unowned countries and apply visibility settings
+    const availableCountries = countries.filter(country => {
+      const individualVisible = countryVisibilitySettings[country.id] !== false;
+      const fiftyCoinsVisible = !gameSettings.fiftyCoinsCountriesHidden || country.cost !== 50;
+      const isUnowned = !country.owner;
+      const withinBorrowLimit = user.coins - country.cost >= -200;
+      
+      return individualVisible && fiftyCoinsVisible && isUnowned && withinBorrowLimit;
+    });
+    
+    // Sort by cost (cheapest first)
+    availableCountries.sort((a, b) => a.cost - b.cost);
+    
+    res.json(availableCountries);
+  } catch (error) {
+    console.error('Get available countries for borrow error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.post('/api/countries/buy', authenticateToken, async (req, res) => {
   try {
     console.log('🏛️ Country buy request:', { countryId: req.body.countryId, userId: req.user.id });
@@ -2221,15 +2251,110 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
 
     // Special handling for borrow card
     if (card.name === "Borrow coins to buy a country") {
-      // Check if user balance is negative - if so, they can't use the card
-      if (user.coins < 0) {
-        return res.status(400).json({ error: 'Cannot use borrow card when balance is already negative' });
+      const { selectedCountry } = req.body;
+      
+      if (!selectedCountry) {
+        return res.status(400).json({ error: 'Please select a country to buy' });
       }
       
-      // Check if balance would go below -200
-      if (user.coins < -200) {
-        return res.status(400).json({ error: 'Cannot borrow - balance limit is -200' });
+      // Get the selected country
+      const country = await findCountryById(selectedCountry);
+      if (!country) {
+        return res.status(404).json({ error: 'Selected country not found' });
       }
+      
+      if (country.owner) {
+        return res.status(400).json({ error: 'Selected country is already owned' });
+      }
+      
+      // Check if user balance would go below -200 after purchase
+      const newBalance = user.coins - country.cost;
+      if (newBalance < -200) {
+        return res.status(400).json({ 
+          error: `Cannot borrow - purchase would make balance ${newBalance} which is below the -200 limit` 
+        });
+      }
+      
+      // Remove card from inventory
+      await removeFromUserInventory(req.user.id, cardId);
+      
+      // Calculate new balance and score
+      const finalCoins = newBalance;
+      const newScore = user.score + country.score;
+      const userId = user.id || user._id;
+      
+      // Calculate new mining rate after buying the country
+      const currentCountries = await getAllCountries();
+      const ownedCountries = currentCountries.filter(c => c.owner === userId);
+      const newMiningRate = ownedCountries.reduce((sum, c) => sum + (c.miningRate || 0), 0) + (country.miningRate || 0);
+      
+      // Update user with new coins, score, and mining rate
+      await updateUserById(req.user.id, { 
+        coins: finalCoins, 
+        score: newScore,
+        miningRate: newMiningRate
+      });
+      
+      // Update country with ownership and mining start time
+      await updateCountryById(selectedCountry, { 
+        owner: userId,
+        lastMined: new Date().toISOString()
+      });
+      
+      // Emit user-update for this user with mining rate
+      io.to(userId).emit('user-update', {
+        id: userId,
+        teamName: user.teamName,
+        coins: finalCoins,
+        score: newScore,
+        miningRate: newMiningRate
+      });
+      
+      // Create notification for the country purchase
+      const purchaseNotification = {
+        id: Date.now().toString(),
+        userId: userId,
+        type: 'country-purchased',
+        message: `You purchased ${country.name} for ${country.cost} coins using the Borrow card! New balance: ${finalCoins} coins`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'user'
+      };
+      await addNotification(purchaseNotification);
+      io.to(userId).emit('notification', purchaseNotification);
+      
+      // Create admin notification
+      const adminNotification = {
+        id: (Date.now() + 1).toString(),
+        type: 'card-used',
+        message: `Team ${user.teamName} used Borrow card to purchase ${country.name} for ${country.cost} coins. New balance: ${finalCoins} coins`,
+        teamId: req.user.id,
+        teamName: user.teamName,
+        cardName: card.name,
+        cardType: card.type,
+        selectedCountry: country.name,
+        description: `Purchased ${country.name} for ${country.cost} coins`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'admin'
+      };
+      await addNotification(adminNotification);
+      io.emit('admin-notification', adminNotification);
+      
+      // Emit countries update
+      io.emit('countries-update');
+      
+      // Notify user that inventory has been updated
+      io.to(req.user.id).emit('inventory-update');
+      io.emit('inventory-update');
+      
+      return res.json({ 
+        success: true,
+        message: 'Country purchased successfully with borrowed coins!',
+        purchasedCountry: country,
+        newBalance: finalCoins,
+        newScore: newScore
+      });
     }
 
     // Special handling for Secret Info card
@@ -2419,9 +2544,31 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     switch(randomCard.actionType) {
       case 'instant':
         // Instant coin changes
-        finalCoins = newCoins + (randomCard.coinChange || 0);
+        const coinChange = randomCard.coinChange || 0;
+        finalCoins = newCoins + coinChange;
         await updateUserById(req.user.id, { coins: finalCoins });
         isInstantAction = true;
+        
+        // Send notification for significant coin changes (especially negative ones)
+        if (coinChange !== 0) {
+          const coinChangeNotification = {
+            id: Date.now().toString(),
+            userId: req.user.id,
+            type: coinChange > 0 ? 'coins-gained' : 'coins-lost',
+            message: coinChange > 0 
+              ? `You gained ${coinChange} coins instantly!`
+              : `You lost ${Math.abs(coinChange)} coins instantly!`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            recipientType: 'user'
+          };
+          await addNotification(coinChangeNotification);
+          
+          // Send socket notification to the user
+          io.to(req.user.id).emit('notification', coinChangeNotification);
+          
+          console.log(`💰 ${user.teamName} ${coinChange > 0 ? 'gained' : 'lost'} ${Math.abs(coinChange)} coins instantly`);
+        }
         break;
 
       case 'instant_tax':
@@ -2433,6 +2580,23 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         isInstantAction = true;
         additionalData.taxAmount = taxAmount;
         additionalData.ownedCountries = ownedCountries;
+        
+        // Send notification to user about the tax payment
+        const taxNotification = {
+          id: Date.now().toString(),
+          userId: req.user.id,
+          type: 'tax-paid',
+          message: `You paid ${taxAmount} coins in border tax for ${ownedCountries} countries you own.`,
+          timestamp: new Date().toISOString(),
+          read: false,
+          recipientType: 'user'
+        };
+        await addNotification(taxNotification);
+        
+        // Send socket notification to the user
+        io.to(req.user.id).emit('notification', taxNotification);
+        
+        console.log(`💰 ${user.teamName} paid ${taxAmount} coins in border tax for ${ownedCountries} countries`);
         break;
 
       case 'random_gift':
