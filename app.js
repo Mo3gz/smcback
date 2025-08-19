@@ -263,6 +263,15 @@ async function initializeDefaultData() {
   }
 }
 
+// Helper function to get filtered countries based on visibility settings
+function getFilteredCountries(countries) {
+  return countries.filter(country => {
+    const individualVisible = countryVisibilitySettings[country.id] !== false;
+    const fiftyCoinsVisible = !gameSettings.fiftyCoinsCountriesHidden || country.cost !== 50;
+    return individualVisible && fiftyCoinsVisible;
+  });
+}
+
 // Helper functions for users (MongoDB or fallback)
 async function findUserByUsername(username) {
   if (mongoConnected && db) {
@@ -2187,8 +2196,11 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
     const updatedUsers = await getAllUsers();
     const updatedCountries = await getAllCountries();
     
+    // Filter countries based on visibility settings before emitting
+    const filteredCountries = getFilteredCountries(updatedCountries);
+    
     io.emit('scoreboard-update', updatedUsers);
-    io.emit('countries-update', updatedCountries);
+    io.emit('countries-update', filteredCountries);
 
     // Admin notification for country purchase
     const adminCountryNotification = {
@@ -2341,8 +2353,10 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       await addNotification(adminNotification);
       io.emit('admin-notification', adminNotification);
       
-      // Emit countries update
-      io.emit('countries-update');
+      // Emit countries update with filtered countries
+      const allCountries = await getAllCountries();
+      const filteredCountries = getFilteredCountries(allCountries);
+      io.emit('countries-update', filteredCountries);
       
       // Notify user that inventory has been updated
       io.to(req.user.id).emit('inventory-update');
@@ -5036,7 +5050,10 @@ app.get('/api/admin/countries', authenticateToken, requireAdmin, async (req, res
       isVisible: countryVisibilitySettings[country.id] !== false // Default to visible
     }));
     
-    res.json(countriesWithDetails);
+    // Filter countries based on visibility settings for admin view
+    const filteredCountries = getFilteredCountries(countriesWithDetails);
+    
+    res.json(filteredCountries);
   } catch (error) {
     console.error('Get admin countries error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -5056,6 +5073,11 @@ app.post('/api/admin/countries/visibility', authenticateToken, requireAdmin, asy
     
     // Emit to all clients about country visibility change
     io.emit('country-visibility-update', { countryId, visible });
+    
+    // Also emit countries update with filtered countries
+    const allCountries = await getAllCountries();
+    const filteredCountries = getFilteredCountries(allCountries);
+    io.emit('countries-update', filteredCountries);
     
     res.json({ 
       success: true, 
@@ -5098,11 +5120,7 @@ app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAd
     
     // Also emit countries update to refresh the map
     const allCountries = await getAllCountries();
-    const filteredCountries = allCountries.filter(country => {
-      const individualVisible = countryVisibilitySettings[country.id] !== false;
-      const fiftyCoinsVisible = !gameSettings.fiftyCoinsCountriesHidden || country.cost !== 50;
-      return individualVisible && fiftyCoinsVisible;
-    });
+    const filteredCountries = getFilteredCountries(allCountries);
     
     io.emit('countries-update', filteredCountries);
     
@@ -5176,6 +5194,11 @@ app.post('/api/admin/countries/ownership', authenticateToken, requireAdmin, asyn
     // Emit country update to all clients
     io.emit('country-update', { countryId, newOwnerId });
     
+    // Also emit countries update with filtered countries
+    const allCountries = await getAllCountries();
+    const filteredCountries = getFilteredCountries(allCountries);
+    io.emit('countries-update', filteredCountries);
+    
     // Update scoreboard
     const updatedUsers = await getAllUsers();
     io.emit('scoreboard-update', updatedUsers);
@@ -5238,6 +5261,11 @@ app.post('/api/admin/countries/add', authenticateToken, requireAdmin, async (req
     // Emit to all clients about new country
     io.emit('country-added', newCountry);
     
+    // Also emit countries update with filtered countries
+    const allCountries = await getAllCountries();
+    const filteredCountries = getFilteredCountries(allCountries);
+    io.emit('countries-update', filteredCountries);
+    
     res.json({ 
       success: true, 
       country: newCountry,
@@ -5290,7 +5318,12 @@ app.delete('/api/admin/countries/:countryId', authenticateToken, requireAdmin, a
     console.log(`Country "${country.name}" deleted by admin`);
     
     // Emit to all clients about country deletion
-    io.emit('country-deleted', { countryId, countryName: country.name });
+    io.emit('country-deleted', { countryName: country.name });
+    
+    // Also emit countries update with filtered countries
+    const allCountries = await getAllCountries();
+    const filteredCountries = getFilteredCountries(allCountries);
+    io.emit('countries-update', filteredCountries);
     
     res.json({ 
       success: true, 
