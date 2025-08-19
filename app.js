@@ -1897,8 +1897,16 @@ app.get('/api/scoreboard', async (req, res) => {
 app.get('/api/countries', async (req, res) => {
   try {
     const countries = await getAllCountries();
+    
+    // Apply global 50 coins visibility filter
+    const filteredCountries = countries.filter(country => {
+      const individualVisible = countryVisibilitySettings[country.id] !== false;
+      const fiftyCoinsVisible = !fiftyCoinsCountriesHidden || country.cost !== 50;
+      return individualVisible && fiftyCoinsVisible;
+    });
+    
     // Include mining rate in the response
-    const countriesWithMining = countries.map(country => ({
+    const countriesWithMining = filteredCountries.map(country => ({
       ...country,
       miningRate: country.miningRate || 0
     }));
@@ -3603,6 +3611,9 @@ function getCardsByType(spinType) {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // Send current global 50 coins visibility state to new connections
+  socket.emit('fifty-coins-countries-visibility-update', { hidden: fiftyCoinsCountriesHidden });
+
   socket.on('join-team', (teamId) => {
     socket.join(teamId);
     console.log(`User joined team: ${teamId}`);
@@ -4444,6 +4455,19 @@ app.post('/api/admin/countries/visibility', authenticateToken, requireAdmin, asy
     });
   } catch (error) {
     console.error('Toggle country visibility error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get 50 coins countries visibility state
+app.get('/api/admin/countries/fifty-coins-visibility', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    res.json({ 
+      success: true, 
+      hidden: fiftyCoinsCountriesHidden
+    });
+  } catch (error) {
+    console.error('Get 50 coins countries visibility state error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
