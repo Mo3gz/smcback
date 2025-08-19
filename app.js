@@ -2367,6 +2367,14 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     console.log(`🔄   - All completed check: ${enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length}`);
     console.log(`🔄   - Should reset: ${enabledSpinTypes.length > 0 && completedSpinTypes.length === enabledSpinTypes.length ? 'YES' : 'NO'}`);
     
+    // Debug: Check each enabled spin type individually
+    enabledSpinTypes.forEach(type => {
+      const count = updatedSpinCounts[type] || 0;
+      const limit = spinLimitations[type]?.limit || 1;
+      const isCompleted = count >= limit;
+      console.log(`🔍 DEBUG ${type}: ${count}/${limit} - ${isCompleted ? 'COMPLETED' : 'NOT COMPLETED'}`);
+    });
+    
     let finalTeamSettings;
     
     // If ALL enabled spin types are completed, reset all counts
