@@ -122,12 +122,12 @@ let users = [
     teamSettings: {
       scoreboardVisible: true,
       spinLimitations: {
-        lucky: { enabled: true, limit: 1 },
-        gamehelper: { enabled: true, limit: 1 },
-        challenge: { enabled: true, limit: 1 },
-        hightier: { enabled: true, limit: 1 },
-        lowtier: { enabled: true, limit: 1 },
-        random: { enabled: true, limit: 1 }
+        lucky: { enabled: false, limit: 1 },
+        gamehelper: { enabled: false, limit: 1 },
+        challenge: { enabled: false, limit: 1 },
+        hightier: { enabled: false, limit: 1 },
+        lowtier: { enabled: false, limit: 1 },
+        random: { enabled: false, limit: 1 }
       },
       spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
     }
@@ -145,12 +145,12 @@ let users = [
     teamSettings: {
       scoreboardVisible: true,
       spinLimitations: {
-        lucky: { enabled: true, limit: 1 },
-        gamehelper: { enabled: true, limit: 1 },
-        challenge: { enabled: true, limit: 1 },
-        hightier: { enabled: true, limit: 1 },
-        lowtier: { enabled: true, limit: 1 },
-        random: { enabled: true, limit: 1 }
+        lucky: { enabled: false, limit: 1 },
+        gamehelper: { enabled: false, limit: 1 },
+        challenge: { enabled: false, limit: 1 },
+        hightier: { enabled: false, limit: 1 },
+        lowtier: { enabled: false, limit: 1 },
+        random: { enabled: false, limit: 1 }
       },
       spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
     }
@@ -168,12 +168,12 @@ let users = [
     teamSettings: {
       scoreboardVisible: true,
       spinLimitations: {
-        lucky: { enabled: true, limit: 1 },
-        gamehelper: { enabled: true, limit: 1 },
-        challenge: { enabled: true, limit: 1 },
-        hightier: { enabled: true, limit: 1 },
-        lowtier: { enabled: true, limit: 1 },
-        random: { enabled: true, limit: 1 }
+        lucky: { enabled: false, limit: 1 },
+        gamehelper: { enabled: false, limit: 1 },
+        challenge: { enabled: false, limit: 1 },
+        hightier: { enabled: false, limit: 1 },
+        lowtier: { enabled: false, limit: 1 },
+        random: { enabled: false, limit: 1 }
       },
       spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
     }
