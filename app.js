@@ -3997,23 +3997,52 @@ app.post('/api/promocode/validate', authenticateToken, async (req, res) => {
 // MCQ Answer endpoint
 app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
   try {
+    console.log('🔍 MCQ: Answer endpoint called');
+    console.log('🔍 MCQ: Request body:', req.body);
+    console.log('🔍 MCQ: User:', req.user);
+    
     const { questionId, answer } = req.body;
+    
+    if (!questionId || answer === undefined) {
+      console.error('❌ MCQ: Missing questionId or answer');
+      return res.status(400).json({ error: 'Missing questionId or answer' });
+    }
+    
     const user = await findUserById(req.user.id);
+    if (!user) {
+      console.error('❌ MCQ: User not found');
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    console.log('🔍 MCQ: User found:', user.teamName);
     
     // Load questions and verify answer
     const fs = require('fs');
     const questions = JSON.parse(fs.readFileSync('./spiritual-questions.json', 'utf8'));
     const question = questions.questions.find(q => q.id === questionId);
     
+    console.log('🔍 MCQ: Looking for question ID:', questionId);
+    console.log('🔍 MCQ: Available question IDs:', questions.questions.map(q => q.id));
+    
     if (!question) {
+      console.error('❌ MCQ: Question not found for ID:', questionId);
       return res.status(404).json({ error: 'Question not found' });
     }
+    
+    console.log('🔍 MCQ: Question found:', question.question);
+    console.log('🔍 MCQ: User answer:', answer);
+    console.log('🔍 MCQ: Correct answer:', question.correct);
     
     const isCorrect = answer === question.correct;
     let rewardCoins = isCorrect ? 100 : 0; // No penalty for wrong answers, +100 for correct
     
+    console.log('🔍 MCQ: Is correct:', isCorrect);
+    console.log('🔍 MCQ: Reward coins:', rewardCoins);
+    
     const newCoins = user.coins + rewardCoins;
     await updateUserById(req.user.id, { coins: newCoins });
+    
+    console.log('🔍 MCQ: Updated user coins:', user.coins, '->', newCoins);
     
     // Emit user update
     io.to(user.id || user._id).emit('user-update', {
@@ -4042,13 +4071,16 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
     const updatedUsers = await getAllUsers();
     io.emit('scoreboard-update', updatedUsers);
     
+    console.log('✅ MCQ: Answer processed successfully');
+    
     res.json({ 
       correct: isCorrect, 
       reward: rewardCoins,
       correctAnswer: question.correct
     });
   } catch (error) {
-    console.error('MCQ answer error:', error);
+    console.error('❌ MCQ: Answer error:', error);
+    console.error('❌ MCQ: Error stack:', error.stack);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
