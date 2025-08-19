@@ -604,47 +604,26 @@ async function authenticateToken(req, res, next) {
     }
   }
   
-  // Enhanced token extraction for Safari (iOS + macOS) compatibility
+  // Enhanced token extraction for all browsers compatibility
   let token = null;
   let tokenSource = 'none';
   
-  // Safari-specific token extraction order (prioritize headers over cookies)
-  if (isSafari) {
-    // For Safari, try headers first, then cookies
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      token = req.headers.authorization.split(' ')[1];
-      tokenSource = 'authorization header (Safari)';
-    } else if (req.headers['x-auth-token']) {
-      token = req.headers['x-auth-token'];
-      tokenSource = 'x-auth-token header (Safari)';
-    } else if (req.cookies.token) {
-      token = req.cookies.token;
-      tokenSource = 'cookie (Safari fallback)';
-    } else if (req.body.token) {
-      token = req.body.token;
-      tokenSource = 'request body (Safari)';
-    } else if (req.query.token) {
-      token = req.query.token;
-      tokenSource = 'query parameter (Safari)';
-    }
-  } else {
-    // For other browsers, try cookies first, then headers
-    if (req.cookies.token) {
-      token = req.cookies.token;
-      tokenSource = 'cookie';
-    } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      token = req.headers.authorization.split(' ')[1];
-      tokenSource = 'authorization header';
-    } else if (req.headers['x-auth-token']) {
-      token = req.headers['x-auth-token'];
-      tokenSource = 'x-auth-token header';
-    } else if (req.body.token) {
-      token = req.body.token;
-      tokenSource = 'request body';
-    } else if (req.query.token) {
-      token = req.query.token;
-      tokenSource = 'query parameter';
-    }
+  // Universal token extraction order (try all sources for better compatibility)
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
+    tokenSource = 'authorization header';
+  } else if (req.headers['x-auth-token']) {
+    token = req.headers['x-auth-token'];
+    tokenSource = 'x-auth-token header';
+  } else if (req.cookies.token) {
+    token = req.cookies.token;
+    tokenSource = 'cookie';
+  } else if (req.body.token) {
+    token = req.body.token;
+    tokenSource = 'request body';
+  } else if (req.query.token) {
+    token = req.query.token;
+    tokenSource = 'query parameter';
   }
   
   console.log('🔐 Token found:', token ? 'Yes' : 'No');
@@ -1866,6 +1845,75 @@ app.post('/api/login', async (req, res) => {
     console.error('❌ Login error:', error);
     console.log('🔑 === LOGIN END (ERROR) ===');
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Token refresh endpoint for better cross-browser compatibility
+app.post('/api/auth/refresh', async (req, res) => {
+  try {
+    console.log('🔄 === TOKEN REFRESH START ===');
+    
+    // Extract token from various sources
+    let token = null;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    } else if (req.headers['x-auth-token']) {
+      token = req.headers['x-auth-token'];
+    } else if (req.cookies.token) {
+      token = req.cookies.token;
+    } else if (req.body.token) {
+      token = req.body.token;
+    }
+    
+    if (!token) {
+      console.log('❌ No token provided for refresh');
+      return res.status(401).json({ error: 'No token provided' });
+    }
+    
+    console.log('🔄 Attempting to refresh token...');
+    
+    // Verify the existing token
+    const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('✅ Token verified, user:', decoded.username);
+    
+    // Find the user to ensure they still exist
+    const user = await findUserById(decoded.id);
+    if (!user) {
+      console.log('❌ User not found during refresh');
+      return res.status(401).json({ error: 'User not found' });
+    }
+    
+    // Create new token with updated payload
+    const newTokenPayload = { 
+      id: user.id || user._id, 
+      username: user.username, 
+      role: user.role, 
+      teamName: user.teamName 
+    };
+    
+    const newToken = jwt.sign(newTokenPayload, JWT_SECRET, { expiresIn: '24h' });
+    
+    // Set new cookie
+    const cookieOptions = getCookieOptions();
+    res.cookie('token', newToken, cookieOptions);
+    
+    console.log('✅ Token refreshed successfully for:', user.username);
+    console.log('🔄 === TOKEN REFRESH END (SUCCESS) ===');
+    
+    res.json({ 
+      token: newToken,
+      user: {
+        id: user.id || user._id,
+        username: user.username,
+        role: user.role,
+        teamName: user.teamName
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Token refresh error:', error);
+    console.log('🔄 === TOKEN REFRESH END (ERROR) ===');
+    res.status(401).json({ error: 'Token refresh failed' });
   }
 });
 
