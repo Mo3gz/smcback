@@ -2398,7 +2398,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         console.log(`📡 Emitting spin-counts-reset socket event to user ${req.user.id}`);
         console.log(`📡 Socket event data:`, { 
           userId: req.user.id,
-          message: `🎉 Congratulations! You've completed all your enabled spin types (${enabledSpinTypes.length} total). Your spin counts have been reset to 0 and you can continue spinning!`
+          message: `🎉 Congratulations! You've reached the limit for ${spinCategory} spins (${limitation.limit}). All your spin counts have been reset to 0 and you can continue spinning!`
         });
         
         // Emit to all clients (broadcast)
