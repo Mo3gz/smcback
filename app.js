@@ -548,12 +548,20 @@ function getUserId(req) {
   return req.body.id || req.query.id;
 }
 
-// Enhanced Authentication middleware with better debugging - macOS/iOS compatible
+// Enhanced Authentication middleware with better debugging - Safari (iOS + macOS) compatible
 function authenticateToken(req, res, next) {
   console.log('🔐 === AUTHENTICATION START ===');
   console.log('🔐 Request URL:', req.url);
   console.log('🔐 Request method:', req.method);
   console.log('🔐 User-Agent:', req.headers['user-agent']);
+  
+  // Detect Safari browser
+  const userAgent = req.headers['user-agent'] || '';
+  const isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+  const isMacOS = /Mac OS X/.test(userAgent);
+  
+  console.log('🔐 Browser detection:', { isSafari, isIOS, isMacOS });
   console.log('🔐 Headers:', JSON.stringify({
     authorization: req.headers.authorization,
     'x-auth-token': req.headers['x-auth-token'],
@@ -562,26 +570,47 @@ function authenticateToken(req, res, next) {
   }, null, 2));
   console.log('🔐 Cookies:', JSON.stringify(req.cookies, null, 2));
   
-  // Enhanced token extraction for macOS/iOS compatibility
+  // Enhanced token extraction for Safari (iOS + macOS) compatibility
   let token = null;
   let tokenSource = 'none';
   
-  // Try multiple sources in order of preference
-  if (req.cookies.token) {
-    token = req.cookies.token;
-    tokenSource = 'cookie';
-  } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    token = req.headers.authorization.split(' ')[1];
-    tokenSource = 'authorization header';
-  } else if (req.headers['x-auth-token']) {
-    token = req.headers['x-auth-token'];
-    tokenSource = 'x-auth-token header';
-  } else if (req.body.token) {
-    token = req.body.token;
-    tokenSource = 'request body';
-  } else if (req.query.token) {
-    token = req.query.token;
-    tokenSource = 'query parameter';
+  // Safari-specific token extraction order (prioritize headers over cookies)
+  if (isSafari) {
+    // For Safari, try headers first, then cookies
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+      tokenSource = 'authorization header (Safari)';
+    } else if (req.headers['x-auth-token']) {
+      token = req.headers['x-auth-token'];
+      tokenSource = 'x-auth-token header (Safari)';
+    } else if (req.cookies.token) {
+      token = req.cookies.token;
+      tokenSource = 'cookie (Safari fallback)';
+    } else if (req.body.token) {
+      token = req.body.token;
+      tokenSource = 'request body (Safari)';
+    } else if (req.query.token) {
+      token = req.query.token;
+      tokenSource = 'query parameter (Safari)';
+    }
+  } else {
+    // For other browsers, try cookies first, then headers
+    if (req.cookies.token) {
+      token = req.cookies.token;
+      tokenSource = 'cookie';
+    } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+      tokenSource = 'authorization header';
+    } else if (req.headers['x-auth-token']) {
+      token = req.headers['x-auth-token'];
+      tokenSource = 'x-auth-token header';
+    } else if (req.body.token) {
+      token = req.body.token;
+      tokenSource = 'request body';
+    } else if (req.query.token) {
+      token = req.query.token;
+      tokenSource = 'query parameter';
+    }
   }
   
   console.log('🔐 Token found:', token ? 'Yes' : 'No');
@@ -597,7 +626,9 @@ function authenticateToken(req, res, next) {
         authHeader: req.headers.authorization,
         xAuthToken: req.headers['x-auth-token'],
         userAgent: req.headers['user-agent'],
-        platform: 'macos/ios'
+        platform: isSafari ? 'safari' : 'other',
+        isIOS: isIOS,
+        isMacOS: isMacOS
       }
     });
   }
@@ -616,7 +647,8 @@ function authenticateToken(req, res, next) {
         debug: {
           tokenError: err.message,
           tokenPreview: token.substring(0, 20) + '...',
-          tokenSource: tokenSource
+          tokenSource: tokenSource,
+          platform: isSafari ? 'safari' : 'other'
         }
       });
     }
@@ -742,11 +774,16 @@ app.get('/api/debug/token-test', authenticateToken, async (req, res) => {
   }
 });
 
-// Debug endpoint to check current authentication state - Enhanced for macOS/iOS
+// Debug endpoint to check current authentication state - Enhanced for Safari (iOS + macOS)
 app.get('/api/debug/auth-state', (req, res) => {
   console.log('🔍 Auth state check');
   console.log('🔍 Cookies:', req.cookies);
   console.log('🔍 Headers:', req.headers);
+  
+  const userAgent = req.headers['user-agent'] || '';
+  const isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+  const isMacOS = /Mac OS X/.test(userAgent);
   
   const token = req.cookies.token || 
                 (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
@@ -768,8 +805,55 @@ app.get('/api/debug/auth-state', (req, res) => {
                 req.headers['x-auth-token'] ? 'x-auth-token header' :
                 req.body.token ? 'request body' :
                 req.query.token ? 'query parameter' : 'none',
-    platform: req.headers['user-agent']?.includes('Mac') ? 'macos' :
-              req.headers['user-agent']?.includes('iPhone') || req.headers['user-agent']?.includes('iPad') ? 'ios' : 'other',
+    browser: {
+      isSafari: isSafari,
+      isIOS: isIOS,
+      isMacOS: isMacOS,
+      platform: isSafari ? 'safari' : 
+                isIOS ? 'ios' : 
+                isMacOS ? 'macos' : 'other'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Safari-specific debug endpoint
+app.get('/api/debug/safari-auth', (req, res) => {
+  console.log('🦁 Safari auth debug check');
+  
+  const userAgent = req.headers['user-agent'] || '';
+  const isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent);
+  const isMacOS = /Mac OS X/.test(userAgent);
+  
+  // Safari-specific token extraction
+  const token = (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
+                req.headers['x-auth-token'] ||
+                req.cookies.token ||
+                req.body.token ||
+                req.query.token;
+  
+  res.json({
+    safari: {
+      isSafari: isSafari,
+      isIOS: isIOS,
+      isMacOS: isMacOS,
+      userAgent: userAgent
+    },
+    token: {
+      hasToken: !!token,
+      source: req.headers.authorization ? 'authorization header' :
+              req.headers['x-auth-token'] ? 'x-auth-token header' :
+              req.cookies.token ? 'cookie' :
+              req.body.token ? 'request body' :
+              req.query.token ? 'query parameter' : 'none',
+      preview: token ? token.substring(0, 20) + '...' : null
+    },
+    cookies: req.cookies,
+    headers: {
+      authorization: req.headers.authorization,
+      'x-auth-token': req.headers['x-auth-token']
+    },
     timestamp: new Date().toISOString()
   });
 });
@@ -843,19 +927,18 @@ app.get('/api/debug/user-role', authenticateToken, async (req, res) => {
   }
 });
 
-// Helper to get cookie options based on environment - Enhanced for macOS/iOS compatibility
+// Helper to get cookie options based on environment - Enhanced for Safari (iOS + macOS)
 function getCookieOptions() {
   const isProduction = process.env.NODE_ENV === 'production';
-  const isLocalhost = process.env.NODE_ENV !== 'production';
   
-  // Enhanced cookie options for better macOS/iOS compatibility
+  // Safari-specific cookie options for both iOS and macOS
   return {
-    httpOnly: false, // Allow JavaScript access for mobile compatibility
+    httpOnly: false, // Allow JavaScript access for Safari compatibility
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: isLocalhost ? 'lax' : 'none', // Use 'lax' for localhost, 'none' for production
-    secure: isProduction, // Only secure in production
+    sameSite: 'lax', // Use 'lax' for Safari compatibility (works better than 'none')
+    secure: false, // Disable secure for localhost to work with Safari
     path: '/',
-    domain: isLocalhost ? undefined : undefined, // Let browser set domain automatically
+    domain: undefined, // Let browser set domain automatically
   };
 }
 
@@ -1085,6 +1168,76 @@ app.get('/api/mobile/auth/me', async (req, res) => {
   } catch (error) {
     console.error("Error in mobile auth/me:", error);
     console.log('📱 === MOBILE AUTH ME END (ERROR) ===');
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Safari-specific authentication endpoint (no cookies, localStorage only)
+app.get('/api/safari/auth/me', async (req, res) => {
+  try {
+    console.log('🦁 === SAFARI AUTH ME START ===');
+    console.log('🦁 User-Agent:', req.headers['user-agent']);
+    
+    // Safari-specific token extraction (no cookies, only headers)
+    const token = (req.headers.authorization && req.headers.authorization.split(' ')[1]) ||
+                  req.headers['x-auth-token'] ||
+                  req.body.token ||
+                  req.query.token;
+    
+    if (!token) {
+      console.log('❌ No token found in Safari auth/me');
+      return res.status(401).json({ 
+        error: 'Access token required',
+        debug: {
+          authHeader: req.headers.authorization,
+          xAuthToken: req.headers['x-auth-token'],
+          userAgent: req.headers['user-agent'],
+          platform: 'safari'
+        }
+      });
+    }
+    
+    // Verify token
+    jwt.verify(token, JWT_SECRET, async (err, decoded) => {
+      if (err) {
+        console.log('❌ Token verification failed in Safari auth/me:', err.message);
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+      
+      const user = await findUserById(decoded.id);
+      if (!user) {
+        console.log('❌ User not found in Safari auth/me:', decoded.id);
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      console.log('✅ Safari auth me successful for user:', user.username);
+      res.json({
+        id: user.id || user._id,
+        username: user.username,
+        role: user.role,
+        teamName: user.teamName,
+        coins: user.coins,
+        score: user.score,
+        totalMined: user.totalMined || 0,
+        lastMined: user.lastMined,
+        teamSettings: user.teamSettings || {
+          scoreboardVisible: true,
+          spinLimitations: {
+            lucky: { enabled: true, limit: 1 },
+            gamehelper: { enabled: true, limit: 1 },
+            challenge: { enabled: true, limit: 1 },
+            hightier: { enabled: true, limit: 1 },
+            lowtier: { enabled: true, limit: 1 },
+            random: { enabled: true, limit: 1 }
+          },
+          spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+        }
+      });
+      console.log('🦁 === SAFARI AUTH ME END (SUCCESS) ===');
+    });
+  } catch (error) {
+    console.error("Error in Safari auth/me:", error);
+    console.log('🦁 === SAFARI AUTH ME END (ERROR) ===');
     res.status(500).json({ error: "Internal server error" });
   }
 });
