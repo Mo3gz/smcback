@@ -2878,33 +2878,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         }
         break;
 
-      case 'instant_tax':
-        // Pay 10 coins per owned country
-        const ownedCountries = await getOwnedCountriesCount(req.user.id);
-        const taxAmount = ownedCountries * 2;
-        finalCoins = newCoins - taxAmount;
-        await updateUserById(req.user.id, { coins: finalCoins });
-        isInstantAction = true;
-        additionalData.taxAmount = taxAmount;
-        additionalData.ownedCountries = ownedCountries;
-        
-        // Send notification to user about the tax payment
-        const taxNotification = {
-          id: Date.now().toString(),
-          userId: req.user.id,
-          type: 'tax-paid',
-          message: `You paid ${taxAmount} coins in border tax for ${ownedCountries} countries you own.`,
-          timestamp: new Date().toISOString(),
-          read: false,
-          recipientType: 'user'
-        };
-        await addNotification(taxNotification);
-        
-        // Send socket notification to the user
-        io.to(req.user.id).emit('notification', taxNotification);
-        
-        console.log(`💰 ${user.teamName} paid ${taxAmount} coins in border tax for ${ownedCountries} countries`);
-        break;
+
 
       case 'random_gift':
         // Give 50 coins to random team (exclude admins and the team who spun)
@@ -4436,10 +4410,9 @@ function getAvailableGames() {
 function getCardsByType(spinType) {
   const cards = {
     lucky: [
-      { name: "-20 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: -20 },
       { name: "+100 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: 100 },
       { name: "Borrow coins to buy a country", type: 'lucky', effect: 'Balance may go negative, limit -200', actionType: 'admin', requiresTeamSelection: false },
-      { name: "Pay 2 coins as border tax", type: 'lucky', effect: 'Pay 2 coins for each country you own', actionType: 'instant_tax' },
+
       { name: "Game Protection", type: 'lucky', effect: 'Protection for selected game', actionType: 'admin', requiresGameSelection: true },
       { name: "+50 Coins to random team", type: 'lucky', effect: '+50 coins given to another random team', actionType: 'random_gift' }
     ],
@@ -4458,7 +4431,6 @@ function getCardsByType(spinType) {
     hightier: [
       { name: "+75 Coins Instantly", type: 'hightier', effect: '+75 coins instantly', actionType: 'instant', coinChange: 75 },
       { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +100 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true},
-      { name: "-20 Coins Instantly", type: 'hightier', effect: '-20 coins instantly', actionType: 'instant', coinChange: -20 }
     ],
     lowtier: [
       { name: "+100 Coins Instantly", type: 'lowtier', effect: '+100 coins instantly', actionType: 'instant', coinChange: 100 },
@@ -5952,17 +5924,7 @@ async function calculateUserMiningRate(userId) {
   }
 }
 
-// Helper function to get owned countries count
-async function getOwnedCountriesCount(userId) {
-  try {
-    const countries = await getAllCountries();
-    const ownedCountries = countries.filter(country => country.owner === userId);
-    return ownedCountries.length;
-  } catch (error) {
-    console.error('Error getting owned countries count:', error);
-    return 0;
-  }
-}
+
 
 // Helper function to get user's mining info
 async function getUserMiningInfo(userId) {
