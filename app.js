@@ -2037,42 +2037,49 @@ app.get('/api/auth/test', async (req, res) => {
       token = req.cookies.token;
     }
     
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        console.log('🧪 Token verified successfully:', decoded);
-        res.json({ 
-          success: true, 
-          message: 'Token is valid',
-          user: decoded,
-          tokenSource: req.headers.authorization ? 'authorization' : 
-                      req.headers['x-auth-token'] ? 'x-auth-token' : 'cookie'
-        });
-      } catch (verifyError) {
-        console.log('🧪 Token verification failed:', verifyError.message);
-        res.status(401).json({ 
-          success: false, 
-          message: 'Token is invalid',
-          error: verifyError.message 
-        });
-      }
-    } else {
-      console.log('🧪 No token found');
-      res.status(401).json({ 
-        success: false, 
-        message: 'No token provided',
-        headers: {
-          authorization: req.headers.authorization ? 'present' : 'missing',
-          'x-auth-token': req.headers['x-auth-token'] ? 'present' : 'missing',
-          cookie: req.cookies.token ? 'present' : 'missing'
+    if (!token) {
+      return res.json({ 
+        error: 'No token provided',
+        debug: {
+          hasAuthHeader: !!req.headers.authorization,
+          hasXAuthToken: !!req.headers['x-auth-token'],
+          hasCookie: !!req.cookies.token,
+          jwtSecret: JWT_SECRET ? 'exists' : 'missing'
         }
       });
     }
     
-    console.log('🧪 === AUTH TEST END ===');
+    // Try to verify token
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      res.json({ 
+        success: true, 
+        decoded,
+        jwtSecret: JWT_SECRET ? 'exists' : 'missing'
+      });
+    } catch (verifyError) {
+      res.json({ 
+        error: 'Token verification failed',
+        verifyError: verifyError.message,
+        jwtSecret: JWT_SECRET ? 'exists' : 'missing'
+      });
+    }
   } catch (error) {
-    console.error('🧪 Auth test error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug endpoint to test JWT_SECRET without authentication
+app.get('/api/debug/jwt-secret', async (req, res) => {
+  try {
+    res.json({ 
+      jwtSecretExists: !!JWT_SECRET,
+      jwtSecretLength: JWT_SECRET ? JWT_SECRET.length : 0,
+      jwtSecretPreview: JWT_SECRET ? JWT_SECRET.substring(0, 10) + '...' : 'none',
+      environment: process.env.NODE_ENV || 'development'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -2777,16 +2784,14 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         cardPoolReset = true;
         randomCard = allCards[Math.floor(Math.random() * allCards.length)];
         
-        // Reset received cards for this spin type
-        receivedCards[spinType] = [];
-        receivedCardsForType.length = 0;
+        // Reset received cards for this spin type and add the current card
+        receivedCards[spinType] = [randomCard.name];
+        receivedCardsForType = [randomCard.name];
       } else {
         // Select from available cards
         randomCard = availableCards[Math.floor(Math.random() * availableCards.length)];
-      }
-      
-      // Add the selected card to received cards (unless it's a pool reset)
-      if (!cardPoolReset) {
+        
+        // Add the selected card to received cards
         receivedCardsForType.push(randomCard.name);
         receivedCards[spinType] = receivedCardsForType;
       }
