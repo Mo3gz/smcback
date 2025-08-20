@@ -57,7 +57,7 @@ connectToMongoDB();
 // Middleware
 // CORS for deployment: allow multiple origins and better mobile support
 const allowedOrigins = [
-  'https://smcscout.netlify.app',
+  'https://saintpaul.netlify.app',
   'http://localhost:3000',
   'http://localhost:3001',
   'https://localhost:3000',
