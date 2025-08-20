@@ -4428,12 +4428,12 @@ function getCardsByType(spinType) {
       { name: "Silent Game", type: 'challenge', effect: 'Choose game: Judge decides result (+150 or -100)', actionType: 'admin', requiresGameSelection: true }
     ],
     hightier: [
-      { name: "+75 Coins Instantly", type: 'hightier', effect: '+75 coins instantly', actionType: 'instant', coinChange: 75 },
-      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +100 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true}
+      { name: "+75 Coins Instantly", type: 'hightier', effect: '', actionType: 'instant', coinChange: 75 },
+      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +100 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true},
+      { name: "-25 Coins Instantly", type: 'lowtier', effect: '', actionType: 'instant', coinChange: -25 }
     ],
     lowtier: [
       { name: "+100 Coins Instantly", type: 'lowtier', effect: '+100 coins instantly', actionType: 'instant', coinChange: 100 },
-      { name: "-10 Coins Instantly", type: 'lowtier', effect: '-10 coins instantly', actionType: 'instant', coinChange: -10 },
       { name: "Victory Multiplier", type: 'lowtier', effect: 'Choose a game: If your team wins, you earn x1.5 coins', actionType: 'admin', requiresGameSelection: true}
     ],
     random: [
