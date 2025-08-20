@@ -2742,44 +2742,48 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     // Get all available cards for this spin type
     const allCards = getCardsByType(spinType);
     
-    // Get user's received cards tracking (initialize if not exists)
-    const receivedCards = teamSettings.receivedCards || {};
-    const receivedCardsForType = receivedCards[spinType] || [];
-    
-    console.log(`🎴 Card collection for ${spinType}:`);
-    console.log(`🎴   - Total available cards: ${allCards.length}`);
-    console.log(`🎴   - Already received: ${receivedCardsForType.length}`);
-    console.log(`🎴   - Received card names:`, receivedCardsForType);
-    
-    // Filter out already received cards
-    const availableCards = allCards.filter(card => 
-      !receivedCardsForType.includes(card.name)
-    );
-    
-    console.log(`🎴   - Available cards: ${availableCards.length}`);
-    console.log(`🎴   - Available card names:`, availableCards.map(card => card.name));
-    
-    let randomCard;
-    let cardPoolReset = false;
-    
-    // If no available cards (all have been received), reset the pool
-    if (availableCards.length === 0) {
-      console.log(`🔄 All cards for ${spinType} have been collected! Resetting card pool.`);
-      cardPoolReset = true;
+    // Special handling for random spin type - no unique card collection
+    if (spinType === 'random') {
+      console.log(`🎲 Random spin - no unique card collection tracking`);
       randomCard = allCards[Math.floor(Math.random() * allCards.length)];
-      
-      // Reset received cards for this spin type
-      receivedCards[spinType] = [];
-      receivedCardsForType.length = 0;
+      cardPoolReset = false;
     } else {
-      // Select from available cards
-      randomCard = availableCards[Math.floor(Math.random() * availableCards.length)];
-    }
-    
-    // Add the selected card to received cards (unless it's a pool reset)
-    if (!cardPoolReset) {
-      receivedCardsForType.push(randomCard.name);
-      receivedCards[spinType] = receivedCardsForType;
+      // Get user's received cards tracking (initialize if not exists)
+      const receivedCards = teamSettings.receivedCards || {};
+      const receivedCardsForType = receivedCards[spinType] || [];
+      
+      console.log(`🎴 Card collection for ${spinType}:`);
+      console.log(`🎴   - Total available cards: ${allCards.length}`);
+      console.log(`🎴   - Already received: ${receivedCardsForType.length}`);
+      console.log(`🎴   - Received card names:`, receivedCardsForType);
+      
+      // Filter out already received cards
+      const availableCards = allCards.filter(card => 
+        !receivedCardsForType.includes(card.name)
+      );
+      
+      console.log(`🎴   - Available cards: ${availableCards.length}`);
+      console.log(`🎴   - Available card names:`, availableCards.map(card => card.name));
+      
+      // If no available cards (all have been received), reset the pool
+      if (availableCards.length === 0) {
+        console.log(`🔄 All cards for ${spinType} have been collected! Resetting card pool.`);
+        cardPoolReset = true;
+        randomCard = allCards[Math.floor(Math.random() * allCards.length)];
+        
+        // Reset received cards for this spin type
+        receivedCards[spinType] = [];
+        receivedCardsForType.length = 0;
+      } else {
+        // Select from available cards
+        randomCard = availableCards[Math.floor(Math.random() * availableCards.length)];
+      }
+      
+      // Add the selected card to received cards (unless it's a pool reset)
+      if (!cardPoolReset) {
+        receivedCardsForType.push(randomCard.name);
+        receivedCards[spinType] = receivedCardsForType;
+      }
     }
     
     console.log(`🎴 Selected card: ${randomCard.name}`);
@@ -3088,8 +3092,10 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       };
     }
     
-    // Update team settings with received cards tracking
-    finalTeamSettings.receivedCards = receivedCards;
+    // Update team settings with received cards tracking (only for non-random spins)
+    if (spinType !== 'random') {
+      finalTeamSettings.receivedCards = receivedCards;
+    }
     
     await updateUserById(req.user.id, { teamSettings: finalTeamSettings });
     
@@ -3114,8 +3120,8 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       actionType: randomCard.actionType,
       additionalData,
       cardPoolReset,
-      receivedCardsCount: receivedCardsForType.length,
-      totalCardsForType: allCards.length
+      receivedCardsCount: spinType === 'random' ? 0 : (receivedCardsForType?.length || 0),
+      totalCardsForType: spinType === 'random' ? 0 : allCards.length
     });
 
     console.log('🎰 === SPIN REQUEST END ===');
@@ -4342,7 +4348,7 @@ function getCardsByType(spinType) {
     ],
     hightier: [
       { name: "+75 Coins Instantly", type: 'hightier', effect: '+75 coins instantly', actionType: 'instant', coinChange: 75 },
-      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +50 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true},
+      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +100 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true},
       { name: "-20 Coins Instantly", type: 'hightier', effect: '-20 coins instantly', actionType: 'instant', coinChange: -20 }
     ],
     lowtier: [
