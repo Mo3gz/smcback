@@ -6070,7 +6070,7 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
     io.emit('scoreboard-update', updatedUsers);
 
     res.json({
-      message: `Successfully mined ${totalEarned} coins from ${countriesWithEarnings.length} countries!`,
+      message: `Successfully mined ${totalEarned} coins!`,
       earned: totalEarned,
       totalMined: newTotalMined,
       newCoins,
