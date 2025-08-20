@@ -4276,17 +4276,25 @@ async function saveGameSettings() {
 // Load team game schedule settings from database
 async function loadTeamGameSchedules() {
   if (!mongoConnected || !db) {
-    console.log('📝 Using in-memory team game schedules');
+    console.log('📝 Using in-memory team game schedules with defaults');
+    // Use default data when no database connection
+    teamGameSchedules = defaultTeamGameSchedules;
     return;
   }
 
   try {
     // Load team game schedules
     const schedulesDoc = await db.collection('gameSettings').findOne({ type: 'teamGameSchedules' });
+    console.log('📊 Database schedules doc:', schedulesDoc);
     if (schedulesDoc && schedulesDoc.schedules) {
       teamGameSchedules = { ...teamGameSchedules, ...schedulesDoc.schedules };
       console.log('✅ Team game schedules loaded from database');
+    } else {
+      // Use default data if no data in database
+      teamGameSchedules = defaultTeamGameSchedules;
+      console.log('📝 Using default team game schedules');
     }
+    console.log('📊 Final teamGameSchedules after loading:', JSON.stringify(teamGameSchedules, null, 2));
 
     // Load active content set
     const activeContentDoc = await db.collection('gameSettings').findOne({ type: 'activeContentSet' });
@@ -4311,6 +4319,9 @@ async function loadTeamGameSchedules() {
 
   } catch (error) {
     console.error('❌ Error loading team game schedules:', error);
+    // Fallback to default data on error
+    teamGameSchedules = defaultTeamGameSchedules;
+    console.log('📝 Using default team game schedules due to error');
   }
 }
 
@@ -6290,6 +6301,8 @@ app.post('/api/admin/game-schedule-visibility', requireAdmin, async (req, res) =
 app.get('/api/admin/game-settings', requireAdmin, async (req, res) => {
   try {
     console.log('⚙️ Admin fetching all game settings');
+    console.log('📊 Current teamGameSchedules:', JSON.stringify(teamGameSchedules, null, 2));
+    console.log('📊 Default teamGameSchedules:', JSON.stringify(defaultTeamGameSchedules, null, 2));
     
     // Check if teamGameSchedules has any data
     const hasTeamData = Object.keys(teamGameSchedules).some(team => 
@@ -6298,14 +6311,20 @@ app.get('/api/admin/game-settings', requireAdmin, async (req, res) => {
       )
     );
     
-    res.json({
+    console.log('🔍 Has team data:', hasTeamData);
+    
+    const responseData = {
       teamGameSchedules: hasTeamData ? teamGameSchedules : defaultTeamGameSchedules,
       activeContentSet,
       gameScheduleVisible,
       visibleSets,
       availableTeams: Object.keys(defaultTeamGameSchedules),
       availableSets: Object.keys(defaultTeamGameSchedules.teamA)
-    });
+    };
+    
+    console.log('📤 Sending response:', JSON.stringify(responseData, null, 2));
+    
+    res.json(responseData);
   } catch (error) {
     console.error('Error fetching game settings:', error);
     res.status(500).json({ error: 'Internal server error' });
