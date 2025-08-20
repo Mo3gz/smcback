@@ -4251,7 +4251,7 @@ async function loadGameSettings() {
     }
 
     // Load team matchups and game schedule settings
-    await loadGameSchedules();
+    await loadTeamGameSchedules();
   } catch (error) {
     console.error('❌ Error loading game settings:', error);
   }
@@ -4273,19 +4273,19 @@ async function saveGameSettings() {
   }
 }
 
-// Load game schedule settings from database
-async function loadGameSchedules() {
+// Load team game schedule settings from database
+async function loadTeamGameSchedules() {
   if (!mongoConnected || !db) {
-    console.log('📝 Using in-memory game schedules');
+    console.log('📝 Using in-memory team game schedules');
     return;
   }
 
   try {
-    // Load game schedules
-    const schedulesDoc = await db.collection('gameSettings').findOne({ type: 'gameSchedules' });
+    // Load team game schedules
+    const schedulesDoc = await db.collection('gameSettings').findOne({ type: 'teamGameSchedules' });
     if (schedulesDoc && schedulesDoc.schedules) {
-      gameSchedules = { ...gameSchedules, ...schedulesDoc.schedules };
-      console.log('✅ Game schedules loaded from database');
+      teamGameSchedules = { ...teamGameSchedules, ...schedulesDoc.schedules };
+      console.log('✅ Team game schedules loaded from database');
     }
 
     // Load active content set
@@ -4302,8 +4302,15 @@ async function loadGameSchedules() {
       console.log('✅ Game schedule visibility loaded from database:', gameScheduleVisible);
     }
 
+    // Load visible sets
+    const visibleSetsDoc = await db.collection('gameSettings').findOne({ type: 'visibleSets' });
+    if (visibleSetsDoc && Array.isArray(visibleSetsDoc.visibleSets)) {
+      visibleSets = visibleSetsDoc.visibleSets;
+      console.log('✅ Visible sets loaded from database:', visibleSets);
+    }
+
   } catch (error) {
-    console.error('❌ Error loading game schedules:', error);
+    console.error('❌ Error loading team game schedules:', error);
   }
 }
 
@@ -6121,30 +6128,38 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
 
 // Team Matchups and Game Schedules API Endpoints
 
-// Get game schedule (renamed from matchups)
+// Get game schedule for specific team
 app.get('/api/game-schedule', async (req, res) => {
   try {
-    console.log('📅 Fetching game schedule for content set:', activeContentSet);
+    const { team } = req.query; // Get team from query parameter
+    console.log('📅 Fetching game schedule for team:', team, 'content set:', activeContentSet);
     
     // Check if game schedule is visible
     if (!gameScheduleVisible) {
       return res.json({
         schedule: [],
         activeContentSet,
-        availableSets: Object.keys(defaultGameSchedules),
+        availableSets: Object.keys(defaultTeamGameSchedules.teamA),
         visible: false,
         message: 'Game schedule is currently hidden'
       });
     }
     
-    const schedule = gameSchedules[activeContentSet] && gameSchedules[activeContentSet].length > 0 
-      ? gameSchedules[activeContentSet] 
-      : defaultGameSchedules[activeContentSet];
+    // Default to teamA if no team specified
+    const selectedTeam = team && teamGameSchedules[team] ? team : 'teamA';
+    
+    const schedule = teamGameSchedules[selectedTeam] && 
+                    teamGameSchedules[selectedTeam][activeContentSet] && 
+                    teamGameSchedules[selectedTeam][activeContentSet].length > 0 
+      ? teamGameSchedules[selectedTeam][activeContentSet] 
+      : defaultTeamGameSchedules[selectedTeam][activeContentSet];
     
     res.json({
       schedule,
       activeContentSet,
-      availableSets: Object.keys(defaultGameSchedules),
+      selectedTeam,
+      availableTeams: Object.keys(defaultTeamGameSchedules),
+      availableSets: Object.keys(defaultTeamGameSchedules.teamA),
       visible: true
     });
   } catch (error) {
@@ -6153,64 +6168,62 @@ app.get('/api/game-schedule', async (req, res) => {
   }
 });
 
-// Get game schedule for active content set
-app.get('/api/game-schedule', async (req, res) => {
-  try {
-    console.log('📅 Fetching game schedule for content set:', activeContentSet);
-    
-    // Check if game schedule is visible
-    if (!gameScheduleVisible) {
-      return res.json({
-        schedule: [],
-        activeContentSet,
-        availableSets: Object.keys(defaultGameSchedules),
-        visible: false,
-        message: 'Game schedule is currently hidden'
-      });
-    }
-    
-    const schedule = gameSchedules[activeContentSet] && gameSchedules[activeContentSet].length > 0 
-      ? gameSchedules[activeContentSet] 
-      : defaultGameSchedules[activeContentSet];
-    
-    res.json({
-      schedule,
-      activeContentSet,
-      availableSets: Object.keys(defaultGameSchedules),
-      visible: true
-    });
-  } catch (error) {
-    console.error('Error fetching game schedule:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+
 
 
 
 // Admin: Update game schedules
-app.post('/api/admin/game-schedules', requireAdmin, async (req, res) => {
+app.post('/api/admin/team-game-schedules', requireAdmin, async (req, res) => {
   try {
-    console.log('📅 Admin updating game schedules:', req.body);
+    console.log('📅 Admin updating team game schedules:', req.body);
     const { schedules } = req.body;
     
     if (!schedules || typeof schedules !== 'object') {
       return res.status(400).json({ error: 'Schedules must be an object' });
     }
     
-    gameSchedules = { ...gameSchedules, ...schedules };
+    teamGameSchedules = { ...teamGameSchedules, ...schedules };
     
     // Save to database if connected
     if (mongoConnected && db) {
       await db.collection('gameSettings').updateOne(
-        { type: 'gameSchedules' },
-        { $set: { schedules: gameSchedules, updatedAt: new Date() } },
+        { type: 'teamGameSchedules' },
+        { $set: { schedules: teamGameSchedules, updatedAt: new Date() } },
         { upsert: true }
       );
     }
     
-    res.json({ success: true, schedules: gameSchedules });
+    res.json({ success: true, schedules: teamGameSchedules });
   } catch (error) {
-    console.error('Error updating game schedules:', error);
+    console.error('Error updating team schedules:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Update visible sets
+app.post('/api/admin/visible-sets', requireAdmin, async (req, res) => {
+  try {
+    console.log('👁️ Admin updating visible sets:', req.body);
+    const { sets } = req.body;
+    
+    if (!Array.isArray(sets)) {
+      return res.status(400).json({ error: 'Sets must be an array' });
+    }
+    
+    visibleSets = sets;
+    
+    // Save to database if connected
+    if (mongoConnected && db) {
+      await db.collection('gameSettings').updateOne(
+        { type: 'visibleSets' },
+        { $set: { visibleSets, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    
+    res.json({ success: true, visibleSets });
+  } catch (error) {
+    console.error('Error updating visible sets:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -6277,13 +6290,21 @@ app.post('/api/admin/game-schedule-visibility', requireAdmin, async (req, res) =
 app.get('/api/admin/game-settings', requireAdmin, async (req, res) => {
   try {
     console.log('⚙️ Admin fetching all game settings');
+    
+    // Check if teamGameSchedules has any data
+    const hasTeamData = Object.keys(teamGameSchedules).some(team => 
+      Object.keys(teamGameSchedules[team]).some(set => 
+        teamGameSchedules[team][set] && teamGameSchedules[team][set].length > 0
+      )
+    );
+    
     res.json({
-      gameSchedules: Object.keys(gameSchedules).some(key => gameSchedules[key].length > 0) 
-        ? gameSchedules 
-        : defaultGameSchedules,
+      teamGameSchedules: hasTeamData ? teamGameSchedules : defaultTeamGameSchedules,
       activeContentSet,
       gameScheduleVisible,
-      availableSets: Object.keys(defaultGameSchedules)
+      visibleSets,
+      availableTeams: Object.keys(defaultTeamGameSchedules),
+      availableSets: Object.keys(defaultTeamGameSchedules.teamA)
     });
   } catch (error) {
     console.error('Error fetching game settings:', error);
@@ -6309,40 +6330,141 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Server URL: http://localhost:${PORT}`);
 });
 
-// Game Schedule System
-let gameSchedules = {
-  contentSet1: [],
-  contentSet2: [],
-  contentSet3: [],
-  contentSet4: []
+// Game Schedule System - Now supports team-specific data
+let teamGameSchedules = {
+  teamA: {
+    contentSet1: [],
+    contentSet2: [],
+    contentSet3: [],
+    contentSet4: []
+  },
+  teamB: {
+    contentSet1: [],
+    contentSet2: [],
+    contentSet3: [],
+    contentSet4: []
+  },
+  teamC: {
+    contentSet1: [],
+    contentSet2: [],
+    contentSet3: [],
+    contentSet4: []
+  },
+  teamD: {
+    contentSet1: [],
+    contentSet2: [],
+    contentSet3: [],
+    contentSet4: []
+  }
 };
 let activeContentSet = 'contentSet1'; // Admin can change this
 let gameScheduleVisible = true; // Admin can hide/show game schedule
+let visibleSets = ['contentSet1', 'contentSet2', 'contentSet3', 'contentSet4']; // Which sets are visible
 
-// Initialize default game schedules (4 different content sets for different teams)
-const defaultGameSchedules = {
-  contentSet1: [
-    { shiftNumber: 1, game: 'Football', gamePlace: 'Main Stadium' },
-    { shiftNumber: 2, game: 'Basketball', gamePlace: 'Indoor Arena' },
-    { shiftNumber: 3, game: 'Volleyball', gamePlace: 'Sports Hall' },
-    { shiftNumber: 4, game: 'Tennis', gamePlace: 'Tennis Court' }
-  ],
-  contentSet2: [
-    { shiftNumber: 1, game: 'Swimming', gamePlace: 'Aquatic Center' },
-    { shiftNumber: 2, game: 'Athletics', gamePlace: 'Track Field' },
-    { shiftNumber: 3, game: 'Table Tennis', gamePlace: 'Recreation Center' },
-    { shiftNumber: 4, game: 'Badminton', gamePlace: 'Badminton Court' }
-  ],
-  contentSet3: [
-    { shiftNumber: 1, game: 'Cricket', gamePlace: 'Cricket Ground' },
-    { shiftNumber: 2, game: 'Hockey', gamePlace: 'Hockey Field' },
-    { shiftNumber: 3, game: 'Rugby', gamePlace: 'Rugby Field' },
-    { shiftNumber: 4, game: 'Golf', gamePlace: 'Golf Course' }
-  ],
-  contentSet4: [
-    { shiftNumber: 1, game: 'Boxing', gamePlace: 'Boxing Ring' },
-    { shiftNumber: 2, game: 'Wrestling', gamePlace: 'Wrestling Mat' },
-    { shiftNumber: 3, game: 'Judo', gamePlace: 'Martial Arts Hall' },
-    { shiftNumber: 4, game: 'Karate', gamePlace: 'Dojo' }
-  ]
+// Initialize default game schedules (team-specific data)
+const defaultTeamGameSchedules = {
+  teamA: {
+    contentSet1: [
+      { shiftNumber: 1, game: 'Football Team A', gamePlace: 'Stadium A' },
+      { shiftNumber: 2, game: 'Basketball Team A', gamePlace: 'Arena A' },
+      { shiftNumber: 3, game: 'Volleyball Team A', gamePlace: 'Hall A' },
+      { shiftNumber: 4, game: 'Tennis Team A', gamePlace: 'Court A' }
+    ],
+    contentSet2: [
+      { shiftNumber: 1, game: 'Swimming Team A', gamePlace: 'Pool A' },
+      { shiftNumber: 2, game: 'Athletics Team A', gamePlace: 'Track A' },
+      { shiftNumber: 3, game: 'Table Tennis Team A', gamePlace: 'Center A' },
+      { shiftNumber: 4, game: 'Badminton Team A', gamePlace: 'Court A2' }
+    ],
+    contentSet3: [
+      { shiftNumber: 1, game: 'Cricket Team A', gamePlace: 'Ground A' },
+      { shiftNumber: 2, game: 'Hockey Team A', gamePlace: 'Field A' },
+      { shiftNumber: 3, game: 'Rugby Team A', gamePlace: 'Field A2' },
+      { shiftNumber: 4, game: 'Golf Team A', gamePlace: 'Course A' }
+    ],
+    contentSet4: [
+      { shiftNumber: 1, game: 'Boxing Team A', gamePlace: 'Ring A' },
+      { shiftNumber: 2, game: 'Wrestling Team A', gamePlace: 'Mat A' },
+      { shiftNumber: 3, game: 'Judo Team A', gamePlace: 'Dojo A' },
+      { shiftNumber: 4, game: 'Karate Team A', gamePlace: 'Hall A2' }
+    ]
+  },
+  teamB: {
+    contentSet1: [
+      { shiftNumber: 1, game: 'Football Team B', gamePlace: 'Stadium B' },
+      { shiftNumber: 2, game: 'Basketball Team B', gamePlace: 'Arena B' },
+      { shiftNumber: 3, game: 'Volleyball Team B', gamePlace: 'Hall B' },
+      { shiftNumber: 4, game: 'Tennis Team B', gamePlace: 'Court B' }
+    ],
+    contentSet2: [
+      { shiftNumber: 1, game: 'Swimming Team B', gamePlace: 'Pool B' },
+      { shiftNumber: 2, game: 'Athletics Team B', gamePlace: 'Track B' },
+      { shiftNumber: 3, game: 'Table Tennis Team B', gamePlace: 'Center B' },
+      { shiftNumber: 4, game: 'Badminton Team B', gamePlace: 'Court B2' }
+    ],
+    contentSet3: [
+      { shiftNumber: 1, game: 'Cricket Team B', gamePlace: 'Ground B' },
+      { shiftNumber: 2, game: 'Hockey Team B', gamePlace: 'Field B' },
+      { shiftNumber: 3, game: 'Rugby Team B', gamePlace: 'Field B2' },
+      { shiftNumber: 4, game: 'Golf Team B', gamePlace: 'Course B' }
+    ],
+    contentSet4: [
+      { shiftNumber: 1, game: 'Boxing Team B', gamePlace: 'Ring B' },
+      { shiftNumber: 2, game: 'Wrestling Team B', gamePlace: 'Mat B' },
+      { shiftNumber: 3, game: 'Judo Team B', gamePlace: 'Dojo B' },
+      { shiftNumber: 4, game: 'Karate Team B', gamePlace: 'Hall B2' }
+    ]
+  },
+  teamC: {
+    contentSet1: [
+      { shiftNumber: 1, game: 'Football Team C', gamePlace: 'Stadium C' },
+      { shiftNumber: 2, game: 'Basketball Team C', gamePlace: 'Arena C' },
+      { shiftNumber: 3, game: 'Volleyball Team C', gamePlace: 'Hall C' },
+      { shiftNumber: 4, game: 'Tennis Team C', gamePlace: 'Court C' }
+    ],
+    contentSet2: [
+      { shiftNumber: 1, game: 'Swimming Team C', gamePlace: 'Pool C' },
+      { shiftNumber: 2, game: 'Athletics Team C', gamePlace: 'Track C' },
+      { shiftNumber: 3, game: 'Table Tennis Team C', gamePlace: 'Center C' },
+      { shiftNumber: 4, game: 'Badminton Team C', gamePlace: 'Court C2' }
+    ],
+    contentSet3: [
+      { shiftNumber: 1, game: 'Cricket Team C', gamePlace: 'Ground C' },
+      { shiftNumber: 2, game: 'Hockey Team C', gamePlace: 'Field C' },
+      { shiftNumber: 3, game: 'Rugby Team C', gamePlace: 'Field C2' },
+      { shiftNumber: 4, game: 'Golf Team C', gamePlace: 'Course C' }
+    ],
+    contentSet4: [
+      { shiftNumber: 1, game: 'Boxing Team C', gamePlace: 'Ring C' },
+      { shiftNumber: 2, game: 'Wrestling Team C', gamePlace: 'Mat C' },
+      { shiftNumber: 3, game: 'Judo Team C', gamePlace: 'Dojo C' },
+      { shiftNumber: 4, game: 'Karate Team C', gamePlace: 'Hall C2' }
+    ]
+  },
+  teamD: {
+    contentSet1: [
+      { shiftNumber: 1, game: 'Football Team D', gamePlace: 'Stadium D' },
+      { shiftNumber: 2, game: 'Basketball Team D', gamePlace: 'Arena D' },
+      { shiftNumber: 3, game: 'Volleyball Team D', gamePlace: 'Hall D' },
+      { shiftNumber: 4, game: 'Tennis Team D', gamePlace: 'Court D' }
+    ],
+    contentSet2: [
+      { shiftNumber: 1, game: 'Swimming Team D', gamePlace: 'Pool D' },
+      { shiftNumber: 2, game: 'Athletics Team D', gamePlace: 'Track D' },
+      { shiftNumber: 3, game: 'Table Tennis Team D', gamePlace: 'Center D' },
+      { shiftNumber: 4, game: 'Badminton Team D', gamePlace: 'Court D2' }
+    ],
+    contentSet3: [
+      { shiftNumber: 1, game: 'Cricket Team D', gamePlace: 'Ground D' },
+      { shiftNumber: 2, game: 'Hockey Team D', gamePlace: 'Field D' },
+      { shiftNumber: 3, game: 'Rugby Team D', gamePlace: 'Field D2' },
+      { shiftNumber: 4, game: 'Golf Team D', gamePlace: 'Course D' }
+    ],
+    contentSet4: [
+      { shiftNumber: 1, game: 'Boxing Team D', gamePlace: 'Ring D' },
+      { shiftNumber: 2, game: 'Wrestling Team D', gamePlace: 'Mat D' },
+      { shiftNumber: 3, game: 'Judo Team D', gamePlace: 'Dojo D' },
+      { shiftNumber: 4, game: 'Karate Team D', gamePlace: 'Hall D2' }
+    ]
+  }
 };
