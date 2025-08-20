@@ -2906,6 +2906,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         
         additionalData.timerStarted = true;
         additionalData.duration = 10;
+        isInstantAction = true;
         break;
 
       case 'mcq':
@@ -2915,6 +2916,13 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         const randomQuestion = questions.questions[Math.floor(Math.random() * questions.questions.length)];
         additionalData.question = randomQuestion;
         additionalData.timeLimit = 13; // 13 seconds
+        isInstantAction = true;
+        break;
+
+      case 'random_category':
+        // This is handled by the getCardsByType function for random spin type
+        // The card should be treated as an admin card since it's a special action
+        isInstantAction = false;
         break;
     }
 
@@ -3103,6 +3111,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       card: randomCard,
       cost,
       remainingCoins: finalCoins,
+      actionType: randomCard.actionType,
       additionalData,
       cardPoolReset,
       receivedCardsCount: receivedCardsForType.length,
