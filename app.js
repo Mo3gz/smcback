@@ -4412,7 +4412,6 @@ function getCardsByType(spinType) {
     lucky: [
       { name: "+100 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: 100 },
       { name: "Borrow coins to buy a country", type: 'lucky', effect: 'Balance may go negative, limit -200', actionType: 'admin', requiresTeamSelection: false },
-
       { name: "Game Protection", type: 'lucky', effect: 'Protection for selected game', actionType: 'admin', requiresGameSelection: true },
       { name: "+50 Coins to random team", type: 'lucky', effect: '+50 coins given to another random team', actionType: 'random_gift' }
     ],
@@ -4430,7 +4429,7 @@ function getCardsByType(spinType) {
     ],
     hightier: [
       { name: "+75 Coins Instantly", type: 'hightier', effect: '+75 coins instantly', actionType: 'instant', coinChange: 75 },
-      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +100 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true},
+      { name: "Flip the Fate", type: 'hightier', effect: 'Choose game: If tied → +100 Bonus, If lost → -50 Penalty', actionType: 'admin', requiresGameSelection: true}
     ],
     lowtier: [
       { name: "+100 Coins Instantly", type: 'lowtier', effect: '+100 coins instantly', actionType: 'instant', coinChange: 100 },
