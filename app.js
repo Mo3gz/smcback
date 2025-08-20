@@ -1872,6 +1872,49 @@ app.get('/api/safari/auth/me', async (req, res) => {
   }
 });
 
+// Standard user endpoint for non-Safari browsers
+app.get('/api/user', authenticateToken, async (req, res) => {
+  try {
+    console.log('👤 === USER ENDPOINT START ===');
+    console.log('👤 User from token:', req.user);
+    
+    const user = await findUserById(req.user.id);
+    if (!user) {
+      console.log('❌ User not found in /api/user:', req.user.id);
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    console.log('✅ User endpoint successful for user:', user.username);
+    res.json({
+      id: user.id || user._id,
+      username: user.username,
+      role: user.role,
+      teamName: user.teamName,
+      coins: user.coins,
+      score: user.score,
+      totalMined: user.totalMined || 0,
+      lastMined: user.lastMined,
+      teamSettings: user.teamSettings || {
+        scoreboardVisible: true,
+        spinLimitations: {
+          lucky: { enabled: true, limit: 1 },
+          gamehelper: { enabled: true, limit: 1 },
+          challenge: { enabled: true, limit: 1 },
+          hightier: { enabled: true, limit: 1 },
+          lowtier: { enabled: true, limit: 1 },
+          random: { enabled: true, limit: 1 }
+        },
+        spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+      }
+    });
+    console.log('👤 === USER ENDPOINT END (SUCCESS) ===');
+  } catch (error) {
+    console.error("Error in /api/user:", error);
+    console.log('👤 === USER ENDPOINT END (ERROR) ===');
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // SIMPLE Safari authentication - NO TOKEN REQUIRED (for testing)
 app.get('/api/safari/simple-auth', async (req, res) => {
   try {
