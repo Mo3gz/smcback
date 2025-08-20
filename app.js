@@ -1282,6 +1282,166 @@ app.get('/api/debug/user-role', authenticateToken, async (req, res) => {
   }
 });
 
+// Debug endpoint to check card collection status
+app.get('/api/debug/card-collection', authenticateToken, async (req, res) => {
+  try {
+    console.log('🎴 === CARD COLLECTION DEBUG START ===');
+    console.log('🎴 User from token:', JSON.stringify(req.user, null, 2));
+    
+    const user = await findUserById(req.user.id);
+    console.log('🎴 User from database:', JSON.stringify(user, null, 2));
+    
+    const teamSettings = user?.teamSettings || {};
+    const receivedCards = teamSettings.receivedCards || {};
+    
+    // Get all available cards for each spin type
+    const allCards = {
+      lucky: getCardsByType('lucky'),
+      gamehelper: getCardsByType('gamehelper'),
+      challenge: getCardsByType('challenge'),
+      hightier: getCardsByType('hightier'),
+      lowtier: getCardsByType('lowtier'),
+      random: getCardsByType('random')
+    };
+    
+    const collectionStatus = {};
+    
+    Object.keys(allCards).forEach(spinType => {
+      const totalCards = allCards[spinType].length;
+      const receivedCardsForType = receivedCards[spinType] || [];
+      const collectedCount = receivedCardsForType.length;
+      const remainingCount = totalCards - collectedCount;
+      const percentage = totalCards > 0 ? Math.round((collectedCount / totalCards) * 100) : 0;
+      
+      collectionStatus[spinType] = {
+        totalCards,
+        collectedCards: receivedCardsForType,
+        collectedCount,
+        remainingCount,
+        percentage,
+        isComplete: collectedCount >= totalCards,
+        availableCards: allCards[spinType].filter(card => !receivedCardsForType.includes(card.name))
+      };
+    });
+    
+    console.log('🎴 Card collection status:', collectionStatus);
+    
+    res.json({
+      user: {
+        id: req.user.id,
+        username: req.user.username,
+        teamName: user?.teamName
+      },
+      collectionStatus,
+      receivedCards,
+      debug: {
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+    console.log('🎴 === CARD COLLECTION DEBUG END ===');
+  } catch (error) {
+    console.error('❌ Card collection debug error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin endpoint to reset card collection for a user
+app.post('/api/admin/reset-card-collection', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔄 === ADMIN RESET CARD COLLECTION START ===');
+    console.log('🔄 Admin request from:', JSON.stringify(req.user, null, 2));
+    
+    // Check if user is admin
+    const username = req.user.username;
+    const userRole = req.user.role;
+    const isAdmin = username === 'ayman' || username === 'admin' || username === 'Admin' ||
+                   userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin' ||
+                   userRole === 'administrator' || userRole === 'Administrator';
+    
+    if (!isAdmin) {
+      console.log('❌ Non-admin user attempted to reset card collection');
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    const { userId, spinType } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+    
+    const targetUser = await findUserById(userId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const teamSettings = targetUser.teamSettings || {};
+    const receivedCards = teamSettings.receivedCards || {};
+    
+    if (spinType) {
+      // Reset specific spin type
+      receivedCards[spinType] = [];
+      console.log(`🔄 Reset card collection for ${targetUser.teamName} - spin type: ${spinType}`);
+    } else {
+      // Reset all spin types
+      Object.keys(receivedCards).forEach(type => {
+        receivedCards[type] = [];
+      });
+      console.log(`🔄 Reset all card collections for ${targetUser.teamName}`);
+    }
+    
+    const updatedTeamSettings = {
+      ...teamSettings,
+      receivedCards
+    };
+    
+    await updateUserById(userId, { teamSettings: updatedTeamSettings });
+    
+    // Send notification to the user
+    const resetNotification = {
+      id: Date.now().toString(),
+      userId: userId,
+      type: 'card-collection-reset',
+      message: spinType 
+        ? `Your ${spinType} card collection has been reset by admin.`
+        : 'All your card collections have been reset by admin.',
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'user'
+    };
+    await addNotification(resetNotification);
+    
+    // Send socket notification to the user
+    if (io) {
+      io.to(userId).emit('notification', resetNotification);
+      io.emit('user-team-settings-updated', {
+        userId: userId,
+        teamSettings: updatedTeamSettings
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: spinType 
+        ? `Card collection reset for ${targetUser.teamName} - ${spinType} spin type`
+        : `All card collections reset for ${targetUser.teamName}`,
+      user: {
+        id: targetUser.id,
+        teamName: targetUser.teamName
+      },
+      resetData: {
+        spinType: spinType || 'all',
+        receivedCards
+      }
+    });
+    
+    console.log('🔄 === ADMIN RESET CARD COLLECTION END ===');
+  } catch (error) {
+    console.error('❌ Admin reset card collection error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Helper to get cookie options based on environment - Enhanced for Safari (iOS + macOS)
 function getCookieOptions() {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -2579,9 +2739,51 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     const newCoins = user.coins - cost;
     await updateUserById(req.user.id, { coins: newCoins });
 
-    // Generate random card based on spin type
-    const cards = getCardsByType(spinType);
-    const randomCard = cards[Math.floor(Math.random() * cards.length)];
+    // Get all available cards for this spin type
+    const allCards = getCardsByType(spinType);
+    
+    // Get user's received cards tracking (initialize if not exists)
+    const receivedCards = teamSettings.receivedCards || {};
+    const receivedCardsForType = receivedCards[spinType] || [];
+    
+    console.log(`🎴 Card collection for ${spinType}:`);
+    console.log(`🎴   - Total available cards: ${allCards.length}`);
+    console.log(`🎴   - Already received: ${receivedCardsForType.length}`);
+    console.log(`🎴   - Received card names:`, receivedCardsForType);
+    
+    // Filter out already received cards
+    const availableCards = allCards.filter(card => 
+      !receivedCardsForType.includes(card.name)
+    );
+    
+    console.log(`🎴   - Available cards: ${availableCards.length}`);
+    console.log(`🎴   - Available card names:`, availableCards.map(card => card.name));
+    
+    let randomCard;
+    let cardPoolReset = false;
+    
+    // If no available cards (all have been received), reset the pool
+    if (availableCards.length === 0) {
+      console.log(`🔄 All cards for ${spinType} have been collected! Resetting card pool.`);
+      cardPoolReset = true;
+      randomCard = allCards[Math.floor(Math.random() * allCards.length)];
+      
+      // Reset received cards for this spin type
+      receivedCards[spinType] = [];
+      receivedCardsForType.length = 0;
+    } else {
+      // Select from available cards
+      randomCard = availableCards[Math.floor(Math.random() * availableCards.length)];
+    }
+    
+    // Add the selected card to received cards (unless it's a pool reset)
+    if (!cardPoolReset) {
+      receivedCardsForType.push(randomCard.name);
+      receivedCards[spinType] = receivedCardsForType;
+    }
+    
+    console.log(`🎴 Selected card: ${randomCard.name}`);
+    console.log(`🎴 Card pool reset: ${cardPoolReset}`);
 
     let finalCoins = newCoins;
     let isInstantAction = false;
@@ -2695,7 +2897,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         const speedBuyTimer = {
           userId: req.user.id,
           startTime: Date.now(),
-          duration: 1 * 60 * 1000, // 10 minutes
+          duration: 10 * 60 * 1000, // 10 minutes
           reward: 50
         };
         // Store timer in memory or database
@@ -2878,6 +3080,9 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       };
     }
     
+    // Update team settings with received cards tracking
+    finalTeamSettings.receivedCards = receivedCards;
+    
     await updateUserById(req.user.id, { teamSettings: finalTeamSettings });
     
     // Send updated team settings to the user
@@ -2898,11 +3103,15 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       card: randomCard,
       cost,
       remainingCoins: finalCoins,
-      actionType: randomCard.actionType,
-      additionalData
+      additionalData,
+      cardPoolReset,
+      receivedCardsCount: receivedCardsForType.length,
+      totalCardsForType: allCards.length
     });
+
+    console.log('🎰 === SPIN REQUEST END ===');
   } catch (error) {
-    console.error('Spin error:', error);
+    console.error('❌ Spin error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
