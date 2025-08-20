@@ -2742,6 +2742,12 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
     // Get all available cards for this spin type
     const allCards = getCardsByType(spinType);
     
+    // Initialize variables
+    let randomCard;
+    let cardPoolReset = false;
+    let receivedCards = teamSettings.receivedCards || {};
+    let receivedCardsForType = receivedCards[spinType] || [];
+    
     // Special handling for random spin type - no unique card collection
     if (spinType === 'random') {
       console.log(`🎲 Random spin - no unique card collection tracking`);
@@ -2749,8 +2755,8 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       cardPoolReset = false;
     } else {
       // Get user's received cards tracking (initialize if not exists)
-      const receivedCards = teamSettings.receivedCards || {};
-      const receivedCardsForType = receivedCards[spinType] || [];
+      receivedCards = teamSettings.receivedCards || {};
+      receivedCardsForType = receivedCards[spinType] || [];
       
       console.log(`🎴 Card collection for ${spinType}:`);
       console.log(`🎴   - Total available cards: ${allCards.length}`);
@@ -3986,7 +3992,7 @@ app.post('/api/debug/create-test-notifications', authenticateToken, async (req, 
         id: (Date.now() + 4).toString(),
         userId: userId,
         type: 'global',
-        message: 'Welcome to the Scout Game! Good luck!',
+        message: 'Welcome to the Saint Paula Sports Team! Good luck!',
         timestamp: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
         read: true,
         recipientType: 'global'
