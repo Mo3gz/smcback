@@ -2093,14 +2093,14 @@ app.get('/api/auth/test', async (req, res) => {
     }
     
     // Try to verify token
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      res.json({ 
-        success: true, 
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        res.json({ 
+          success: true, 
         decoded,
         jwtSecret: JWT_SECRET ? 'exists' : 'missing'
-      });
-    } catch (verifyError) {
+        });
+      } catch (verifyError) {
       res.json({ 
         error: 'Token verification failed',
         verifyError: verifyError.message,
