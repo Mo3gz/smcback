@@ -4251,7 +4251,7 @@ async function loadGameSettings() {
     }
 
     // Load team matchups and game schedule settings
-    await loadTeamMatchupsAndSchedules();
+    await loadGameSchedules();
   } catch (error) {
     console.error('❌ Error loading game settings:', error);
   }
@@ -4273,21 +4273,14 @@ async function saveGameSettings() {
   }
 }
 
-// Load team matchups and game schedule settings from database
-async function loadTeamMatchupsAndSchedules() {
+// Load game schedule settings from database
+async function loadGameSchedules() {
   if (!mongoConnected || !db) {
-    console.log('📝 Using in-memory team matchups and schedules');
+    console.log('📝 Using in-memory game schedules');
     return;
   }
 
   try {
-    // Load team matchups
-    const matchupsDoc = await db.collection('gameSettings').findOne({ type: 'matchups' });
-    if (matchupsDoc && matchupsDoc.matchups) {
-      teamMatchups = matchupsDoc.matchups;
-      console.log('✅ Team matchups loaded from database:', teamMatchups.length, 'matchups');
-    }
-
     // Load game schedules
     const schedulesDoc = await db.collection('gameSettings').findOne({ type: 'gameSchedules' });
     if (schedulesDoc && schedulesDoc.schedules) {
@@ -4310,7 +4303,7 @@ async function loadTeamMatchupsAndSchedules() {
     }
 
   } catch (error) {
-    console.error('❌ Error loading team matchups and schedules:', error);
+    console.error('❌ Error loading game schedules:', error);
   }
 }
 
@@ -6128,16 +6121,34 @@ app.post('/api/mining/collect', authenticateToken, async (req, res) => {
 
 // Team Matchups and Game Schedules API Endpoints
 
-// Get team matchups
-app.get('/api/matchups', async (req, res) => {
+// Get game schedule (renamed from matchups)
+app.get('/api/game-schedule', async (req, res) => {
   try {
-    console.log('🏆 Fetching team matchups');
+    console.log('📅 Fetching game schedule for content set:', activeContentSet);
+    
+    // Check if game schedule is visible
+    if (!gameScheduleVisible) {
+      return res.json({
+        schedule: [],
+        activeContentSet,
+        availableSets: Object.keys(defaultGameSchedules),
+        visible: false,
+        message: 'Game schedule is currently hidden'
+      });
+    }
+    
+    const schedule = gameSchedules[activeContentSet] && gameSchedules[activeContentSet].length > 0 
+      ? gameSchedules[activeContentSet] 
+      : defaultGameSchedules[activeContentSet];
+    
     res.json({
-      matchups: teamMatchups.length > 0 ? teamMatchups : defaultMatchups,
-      activeContentSet
+      schedule,
+      activeContentSet,
+      availableSets: Object.keys(defaultGameSchedules),
+      visible: true
     });
   } catch (error) {
-    console.error('Error fetching matchups:', error);
+    console.error('Error fetching game schedule:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -6174,33 +6185,7 @@ app.get('/api/game-schedule', async (req, res) => {
   }
 });
 
-// Admin: Update team matchups
-app.post('/api/admin/matchups', requireAdmin, async (req, res) => {
-  try {
-    console.log('🏆 Admin updating team matchups:', req.body);
-    const { matchups } = req.body;
-    
-    if (!Array.isArray(matchups)) {
-      return res.status(400).json({ error: 'Matchups must be an array' });
-    }
-    
-    teamMatchups = matchups;
-    
-    // Save to database if connected
-    if (mongoConnected && db) {
-      await db.collection('gameSettings').updateOne(
-        { type: 'matchups' },
-        { $set: { matchups, updatedAt: new Date() } },
-        { upsert: true }
-      );
-    }
-    
-    res.json({ success: true, matchups });
-  } catch (error) {
-    console.error('Error updating matchups:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+
 
 // Admin: Update game schedules
 app.post('/api/admin/game-schedules', requireAdmin, async (req, res) => {
@@ -6293,7 +6278,6 @@ app.get('/api/admin/game-settings', requireAdmin, async (req, res) => {
   try {
     console.log('⚙️ Admin fetching all game settings');
     res.json({
-      matchups: teamMatchups.length > 0 ? teamMatchups : defaultMatchups,
       gameSchedules: Object.keys(gameSchedules).some(key => gameSchedules[key].length > 0) 
         ? gameSchedules 
         : defaultGameSchedules,
@@ -6325,8 +6309,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Server URL: http://localhost:${PORT}`);
 });
 
-// Team Matchups and Game Schedules
-let teamMatchups = [];
+// Game Schedule System
 let gameSchedules = {
   contentSet1: [],
   contentSet2: [],
@@ -6336,15 +6319,7 @@ let gameSchedules = {
 let activeContentSet = 'contentSet1'; // Admin can change this
 let gameScheduleVisible = true; // Admin can hide/show game schedule
 
-// Initialize default team matchups
-const defaultMatchups = [
-  { id: 1, team1: 'Team Alpha', team2: 'Team Beta', date: '2024-01-15', time: '14:00' },
-  { id: 2, team1: 'Team Gamma', team2: 'Team Delta', date: '2024-01-15', time: '16:00' },
-  { id: 3, team1: 'Team Alpha', team2: 'Team Gamma', date: '2024-01-16', time: '14:00' },
-  { id: 4, team1: 'Team Beta', team2: 'Team Delta', date: '2024-01-16', time: '16:00' }
-];
-
-// Initialize default game schedules (4 different content sets)
+// Initialize default game schedules (4 different content sets for different teams)
 const defaultGameSchedules = {
   contentSet1: [
     { shiftNumber: 1, game: 'Football', gamePlace: 'Main Stadium' },
