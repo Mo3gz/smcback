@@ -2695,7 +2695,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         const speedBuyTimer = {
           userId: req.user.id,
           startTime: Date.now(),
-          duration: 10 * 60 * 1000, // 10 minutes
+          duration: 1 * 60 * 1000, // 10 minutes
           reward: 50
         };
         // Store timer in memory or database
