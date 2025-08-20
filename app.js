@@ -6352,28 +6352,28 @@ server.listen(PORT, '0.0.0.0', () => {
 // Game Schedule System - Now supports team-specific data
 let teamGameSchedules = {
   teamA: {
-    contentSet1: [],
-    contentSet2: [],
-    contentSet3: [],
-    contentSet4: []
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
   },
   teamB: {
-    contentSet1: [],
-    contentSet2: [],
-    contentSet3: [],
-    contentSet4: []
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
   },
   teamC: {
-    contentSet1: [],
-    contentSet2: [],
-    contentSet3: [],
-    contentSet4: []
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
   },
   teamD: {
-    contentSet1: [],
-    contentSet2: [],
-    contentSet3: [],
-    contentSet4: []
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  teamE: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  teamF: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  teamG: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  teamH: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
   }
 };
 let activeContentSet = 'contentSet1'; // Admin can change this
@@ -6484,6 +6484,110 @@ const defaultTeamGameSchedules = {
       { shiftNumber: 2, game: 'Wrestling Team D', gamePlace: 'Mat D' },
       { shiftNumber: 3, game: 'Judo Team D', gamePlace: 'Dojo D' },
       { shiftNumber: 4, game: 'Karate Team D', gamePlace: 'Hall D2' }
+    ]
+  },
+  teamE: {
+    contentSet1: [
+      { shiftNumber: 1, game: 'Football Team E', gamePlace: 'Stadium E' },
+      { shiftNumber: 2, game: 'Basketball Team E', gamePlace: 'Arena E' },
+      { shiftNumber: 3, game: 'Volleyball Team E', gamePlace: 'Hall E' },
+      { shiftNumber: 4, game: 'Tennis Team E', gamePlace: 'Court E' }
+    ],
+    contentSet2: [
+      { shiftNumber: 1, game: 'Swimming Team E', gamePlace: 'Pool E' },
+      { shiftNumber: 2, game: 'Athletics Team E', gamePlace: 'Track E' },
+      { shiftNumber: 3, game: 'Table Tennis Team E', gamePlace: 'Center E' },
+      { shiftNumber: 4, game: 'Badminton Team E', gamePlace: 'Court E2' }
+    ],
+    contentSet3: [
+      { shiftNumber: 1, game: 'Cricket Team E', gamePlace: 'Ground E' },
+      { shiftNumber: 2, game: 'Hockey Team E', gamePlace: 'Field E' },
+      { shiftNumber: 3, game: 'Rugby Team E', gamePlace: 'Field E2' },
+      { shiftNumber: 4, game: 'Golf Team E', gamePlace: 'Course E' }
+    ],
+    contentSet4: [
+      { shiftNumber: 1, game: 'Boxing Team E', gamePlace: 'Ring E' },
+      { shiftNumber: 2, game: 'Wrestling Team E', gamePlace: 'Mat E' },
+      { shiftNumber: 3, game: 'Judo Team E', gamePlace: 'Dojo E' },
+      { shiftNumber: 4, game: 'Karate Team E', gamePlace: 'Hall E2' }
+    ]
+  },
+  teamF: {
+    contentSet1: [
+      { shiftNumber: 1, game: 'Football Team F', gamePlace: 'Stadium F' },
+      { shiftNumber: 2, game: 'Basketball Team F', gamePlace: 'Arena F' },
+      { shiftNumber: 3, game: 'Volleyball Team F', gamePlace: 'Hall F' },
+      { shiftNumber: 4, game: 'Tennis Team F', gamePlace: 'Court F' }
+    ],
+    contentSet2: [
+      { shiftNumber: 1, game: 'Swimming Team F', gamePlace: 'Pool F' },
+      { shiftNumber: 2, game: 'Athletics Team F', gamePlace: 'Track F' },
+      { shiftNumber: 3, game: 'Table Tennis Team F', gamePlace: 'Center F' },
+      { shiftNumber: 4, game: 'Badminton Team F', gamePlace: 'Court F2' }
+    ],
+    contentSet3: [
+      { shiftNumber: 1, game: 'Cricket Team F', gamePlace: 'Ground F' },
+      { shiftNumber: 2, game: 'Hockey Team F', gamePlace: 'Field F' },
+      { shiftNumber: 3, game: 'Rugby Team F', gamePlace: 'Field F2' },
+      { shiftNumber: 4, game: 'Golf Team F', gamePlace: 'Course F' }
+    ],
+    contentSet4: [
+      { shiftNumber: 1, game: 'Boxing Team F', gamePlace: 'Ring F' },
+      { shiftNumber: 2, game: 'Wrestling Team F', gamePlace: 'Mat F' },
+      { shiftNumber: 3, game: 'Judo Team F', gamePlace: 'Dojo F' },
+      { shiftNumber: 4, game: 'Karate Team F', gamePlace: 'Hall F2' }
+    ]
+  },
+  teamG: {
+    contentSet1: [
+      { shiftNumber: 1, game: 'Football Team G', gamePlace: 'Stadium G' },
+      { shiftNumber: 2, game: 'Basketball Team G', gamePlace: 'Arena G' },
+      { shiftNumber: 3, game: 'Volleyball Team G', gamePlace: 'Hall G' },
+      { shiftNumber: 4, game: 'Tennis Team G', gamePlace: 'Court G' }
+    ],
+    contentSet2: [
+      { shiftNumber: 1, game: 'Swimming Team G', gamePlace: 'Pool G' },
+      { shiftNumber: 2, game: 'Athletics Team G', gamePlace: 'Track G' },
+      { shiftNumber: 3, game: 'Table Tennis Team G', gamePlace: 'Center G' },
+      { shiftNumber: 4, game: 'Badminton Team G', gamePlace: 'Court G2' }
+    ],
+    contentSet3: [
+      { shiftNumber: 1, game: 'Cricket Team G', gamePlace: 'Ground G' },
+      { shiftNumber: 2, game: 'Hockey Team G', gamePlace: 'Field G' },
+      { shiftNumber: 3, game: 'Rugby Team G', gamePlace: 'Field G2' },
+      { shiftNumber: 4, game: 'Golf Team G', gamePlace: 'Course G' }
+    ],
+    contentSet4: [
+      { shiftNumber: 1, game: 'Boxing Team G', gamePlace: 'Ring G' },
+      { shiftNumber: 2, game: 'Wrestling Team G', gamePlace: 'Mat G' },
+      { shiftNumber: 3, game: 'Judo Team G', gamePlace: 'Dojo G' },
+      { shiftNumber: 4, game: 'Karate Team G', gamePlace: 'Hall G2' }
+    ]
+  },
+  teamH: {
+    contentSet1: [
+      { shiftNumber: 1, game: 'Football Team H', gamePlace: 'Stadium H' },
+      { shiftNumber: 2, game: 'Basketball Team H', gamePlace: 'Arena H' },
+      { shiftNumber: 3, game: 'Volleyball Team H', gamePlace: 'Hall H' },
+      { shiftNumber: 4, game: 'Tennis Team H', gamePlace: 'Court H' }
+    ],
+    contentSet2: [
+      { shiftNumber: 1, game: 'Swimming Team H', gamePlace: 'Pool H' },
+      { shiftNumber: 2, game: 'Athletics Team H', gamePlace: 'Track H' },
+      { shiftNumber: 3, game: 'Table Tennis Team H', gamePlace: 'Center H' },
+      { shiftNumber: 4, game: 'Badminton Team H', gamePlace: 'Court H2' }
+    ],
+    contentSet3: [
+      { shiftNumber: 1, game: 'Cricket Team H', gamePlace: 'Ground H' },
+      { shiftNumber: 2, game: 'Hockey Team H', gamePlace: 'Field H' },
+      { shiftNumber: 3, game: 'Rugby Team H', gamePlace: 'Field H2' },
+      { shiftNumber: 4, game: 'Golf Team H', gamePlace: 'Course H' }
+    ],
+    contentSet4: [
+      { shiftNumber: 1, game: 'Boxing Team H', gamePlace: 'Ring H' },
+      { shiftNumber: 2, game: 'Wrestling Team H', gamePlace: 'Mat H' },
+      { shiftNumber: 3, game: 'Judo Team H', gamePlace: 'Dojo H' },
+      { shiftNumber: 4, game: 'Karate Team H', gamePlace: 'Hall H2' }
     ]
   }
 };
