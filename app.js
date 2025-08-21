@@ -234,6 +234,19 @@ async function initializeDefaultData() {
     if (countryCount === 0) {
       await db.collection('countries').insertMany(countries);
       console.log('✅ Default countries initialized in MongoDB');
+    } else {
+      console.log(`📊 Countries collection already has ${countryCount} documents`);
+      
+      // Verify that countries have the correct structure
+      const sampleCountry = await db.collection('countries').findOne({});
+      if (sampleCountry) {
+        console.log('📊 Sample country structure:', {
+          id: sampleCountry.id,
+          name: sampleCountry.name,
+          hasOwner: 'owner' in sampleCountry,
+          hasMiningRate: 'miningRate' in sampleCountry
+        });
+      }
     }
 
     // Create indexes for better performance
@@ -322,9 +335,18 @@ async function getAllUsers() {
 
 // Helper functions for countries (MongoDB or fallback)
 async function getAllCountries() {
-  if (mongoConnected && db) {
-    return await db.collection('countries').find({}).toArray();
-  } else {
+  try {
+    if (mongoConnected && db) {
+      const countriesFromDB = await db.collection('countries').find({}).toArray();
+      console.log(`📊 getAllCountries: Found ${countriesFromDB.length} countries from MongoDB`);
+      return countriesFromDB;
+    } else {
+      console.log(`📊 getAllCountries: Using fallback countries array with ${countries.length} countries`);
+      return countries;
+    }
+  } catch (error) {
+    console.error('❌ Error in getAllCountries:', error);
+    console.log(`📊 getAllCountries: Falling back to countries array with ${countries.length} countries`);
     return countries;
   }
 }
@@ -6301,9 +6323,16 @@ app.post('/api/speedbuy/check', authenticateToken, async (req, res) => {
 // Helper function to calculate user's mining rate
 async function calculateUserMiningRate(userId) {
   try {
+    console.log(`🔍 Calculating mining rate for user ${userId}...`);
     const countries = await getAllCountries();
+    console.log(`📊 Total countries found: ${countries.length}`);
+    
     const ownedCountries = countries.filter(country => country.owner === userId);
+    console.log(`🏠 Owned countries for user ${userId}:`, ownedCountries.map(c => ({ id: c.id, name: c.name, miningRate: c.miningRate })));
+    
     const totalMiningRate = ownedCountries.reduce((sum, country) => sum + (country.miningRate || 0), 0);
+    console.log(`⛏️ Total mining rate for user ${userId}: ${totalMiningRate}`);
+    
     return totalMiningRate;
   } catch (error) {
     console.error('Error calculating mining rate:', error);
@@ -6316,13 +6345,25 @@ async function calculateUserMiningRate(userId) {
 // Helper function to get user's mining info
 async function getUserMiningInfo(userId) {
   try {
+    console.log(`🔍 Getting mining info for user ${userId}...`);
     const user = await findUserById(userId);
-    if (!user) return null;
+    if (!user) {
+      console.log(`❌ User ${userId} not found`);
+      return null;
+    }
+    
+    console.log(`✅ User ${userId} found:`, { teamName: user.teamName, role: user.role });
     
     const miningRate = await calculateUserMiningRate(userId);
     const ownedCountries = await getAllCountries().then(countries => 
       countries.filter(country => country.owner === userId)
     );
+    
+    console.log(`📊 Final mining info for user ${userId}:`, {
+      miningRate,
+      totalMined: user.totalMined || 0,
+      ownedCountriesCount: ownedCountries.length
+    });
     
     return {
       userId,
@@ -6697,6 +6738,37 @@ app.post('/api/admin/team-game-schedules', authenticateToken, requireAdmin, asyn
     res.json({ success: true, schedules: teamGameSchedules });
   } catch (error) {
     console.error('Error updating team schedules:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Initialize default team schedules
+app.post('/api/admin/team-game-schedules/initialize', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('🚀 Admin initializing default team schedules');
+    
+    // Set teamGameSchedules to the default values
+    teamGameSchedules = { ...defaultTeamGameSchedules };
+    
+    // Save to database if connected
+    if (mongoConnected && db) {
+      await db.collection('gameSettings').updateOne(
+        { type: 'teamGameSchedules' },
+        { $set: { schedules: teamGameSchedules, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    
+    // Emit socket event to all clients about schedule update
+    io.emit('game-schedule-update', { teamGameSchedules });
+    
+    res.json({ 
+      success: true, 
+      message: 'Default team schedules initialized successfully',
+      schedules: teamGameSchedules 
+    });
+  } catch (error) {
+    console.error('Error initializing default team schedules:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
