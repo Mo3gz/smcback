@@ -3471,6 +3471,100 @@ app.post('/api/admin/cards', authenticateToken, requireAdmin, async (req, res) =
   try {
     const { teamId, cardName, cardType } = req.body;
     const adminUser = await findUserById(req.user.id);
+    
+    // Check if sending to all teams
+    if (teamId === 'all') {
+      // Get all users (teams)
+      const allUsers = await getAllUsers();
+      
+      // Find the card definition to get its properties
+      let cardDefinition = null;
+      try {
+        const cardsList = getCardsByType(cardType === 'random' ? 'lucky' : cardType);
+        cardDefinition = cardsList.find(c => c.name === cardName);
+      } catch (e) {
+        console.error('Error finding card definition:', e);
+      }
+
+      const card = {
+        id: Date.now().toString(),
+        name: cardName,
+        type: cardType,
+        effect: cardDefinition ? cardDefinition.effect : '',
+        requiresGameSelection: cardDefinition ? cardDefinition.requiresGameSelection : false,
+        requiresTeamSelection: cardDefinition ? cardDefinition.requiresTeamSelection : false,
+        maxGame: cardDefinition ? cardDefinition.maxGame : null,
+        obtainedAt: new Date().toISOString()
+      };
+
+      // Format card type for display (capitalize first letter)
+      const displayCardType = cardType.charAt(0).toUpperCase() + cardType.slice(1);
+      const effect = cardDefinition ? cardDefinition.effect : '';
+
+      // Send card to all teams
+      for (const user of allUsers) {
+        await addToUserInventory(user.id, card);
+
+        // Notify each team
+        const teamNotification = {
+          id: Date.now().toString() + Math.random(),
+          userId: user.id,
+          type: 'card-received',
+          message: `You received a new ${displayCardType} card: ${cardName}${effect ? ' - ' + effect : ''}`,
+          timestamp: new Date().toISOString(),
+          read: false,
+          recipientType: 'user',
+          metadata: {
+            cardName,
+            cardType,
+            effect
+          }
+        };
+
+        // Send notification to the team
+        io.to(user.id).emit('notification', teamNotification);
+        await addNotification(teamNotification);
+        
+        // Notify user that inventory has been updated
+        io.to(user.id).emit('inventory-update');
+      }
+      
+      // Create admin action notification for sending to all teams
+      const adminAction = {
+        id: (Date.now() + 1).toString(),
+        userId: req.user.id, // Admin's user ID
+        type: 'admin-action',
+        actionType: 'card-assigned-all',
+        message: `Admin ${adminUser.teamName} assigned ${displayCardType} card "${cardName}" to ALL teams.`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'admin',
+        metadata: {
+          targetTeamId: 'all',
+          targetTeamName: 'All Teams',
+          cardName: cardName,
+          cardType: cardType,
+          effect: effect || 'No effect description available'
+        }
+      };
+
+      // Save and emit admin action notification
+      await addNotification(adminAction);
+      io.emit('admin-notification', adminAction);
+      
+      // Update scoreboard to reflect any changes
+      const updatedUsers = await getAllUsers();
+      io.emit('scoreboard-update', updatedUsers);
+
+      return res.json({
+        ...card,
+        effect: effect || null,
+        sentToAll: true,
+        teamCount: allUsers.length
+      });
+    }
+    
+    // Original logic for single team
     const user = await findUserById(teamId);
     
     if (!user) {
@@ -6336,6 +6430,9 @@ app.post('/api/admin/team-game-schedules', authenticateToken, requireAdmin, asyn
       );
     }
     
+    // Emit socket event to all clients about schedule update
+    io.emit('game-schedule-update', { teamGameSchedules });
+    
     res.json({ success: true, schedules: teamGameSchedules });
   } catch (error) {
     console.error('Error updating team schedules:', error);
@@ -6363,6 +6460,9 @@ app.post('/api/admin/visible-sets', authenticateToken, requireAdmin, async (req,
         { upsert: true }
       );
     }
+    
+    // Emit socket event to all clients about visible sets update
+    io.emit('game-schedule-update', { visibleSets });
     
     res.json({ success: true, visibleSets });
   } catch (error) {
