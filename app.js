@@ -397,10 +397,13 @@ async function removeFromUserInventory(userId, itemId) {
 
 // Helper functions for notifications (MongoDB or fallback)
 async function addNotification(notification) {
-  // Ensure notification has default read status
+  // Ensure notification has default read status and approval status
   const notificationWithDefaults = {
     ...notification,
-    read: notification.read !== undefined ? notification.read : false
+    read: notification.read !== undefined ? notification.read : false,
+    approved: notification.approved !== undefined ? notification.approved : null, // null = pending, true = approved, false = rejected
+    approvedAt: notification.approvedAt || null,
+    approvedBy: notification.approvedBy || null
   };
   
   if (mongoConnected && db) {
@@ -496,6 +499,44 @@ async function markAllNotificationsAsRead(userId) {
         notification.readAt = new Date();
       }
     });
+  }
+}
+
+// Approve or reject a notification (admin only)
+async function approveNotification(notificationId, approved, adminId) {
+  if (mongoConnected && db) {
+    await db.collection('notifications').updateOne(
+      { id: notificationId },
+      { 
+        $set: { 
+          approved: approved, 
+          approvedAt: new Date(),
+          approvedBy: adminId
+        } 
+      }
+    );
+  } else {
+    const notification = notifications.find(n => n.id === notificationId);
+    if (notification) {
+      notification.approved = approved;
+      notification.approvedAt = new Date();
+      notification.approvedBy = adminId;
+    }
+  }
+}
+
+// Get pending notifications that need admin approval
+async function getPendingNotifications() {
+  if (mongoConnected && db) {
+    return await db.collection('notifications').find({
+      approved: null,
+      recipientType: 'admin'
+    }).sort({ timestamp: -1 }).toArray();
+  } else {
+    return notifications.filter(notification => 
+      notification.approved === null && 
+      notification.recipientType === 'admin'
+    ).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   }
 }
 
@@ -4797,6 +4838,7 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
     const adminNotification = {
       id: (Date.now() + 1).toString(),
       type: 'mcq-answer',
+      category: 'spins',
       teamId: req.user.id,
       teamName: user.teamName,
       message: `Team ${user.teamName} answered mystery question: ${isCorrect ? 'TRUE +100 kaizen' : 'FALSE +0 kaizen'}`,
@@ -6605,6 +6647,39 @@ app.post('/api/admin/game-schedule-visibility', authenticateToken, requireAdmin,
     res.json({ success: true, gameScheduleVisible });
   } catch (error) {
     console.error('Error setting game schedule visibility:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Approve or reject a notification
+app.post('/api/admin/notifications/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approved } = req.body;
+    
+    if (approved === undefined) {
+      return res.status(400).json({ error: 'Approval status is required' });
+    }
+    
+    await approveNotification(id, approved, req.user.id);
+    
+    // Emit update to all admin clients
+    io.emit('admin-notification-update');
+    
+    res.json({ success: true, message: `Notification ${approved ? 'approved' : 'rejected'} successfully` });
+  } catch (error) {
+    console.error('Error approving notification:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get pending notifications
+app.get('/api/admin/notifications/pending', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pendingNotifications = await getPendingNotifications();
+    res.json(pendingNotifications);
+  } catch (error) {
+    console.error('Error getting pending notifications:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
