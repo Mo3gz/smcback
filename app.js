@@ -5725,6 +5725,25 @@ app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdm
   }
 });
 
+// Public get 50 coins countries visibility status (for users)
+app.get('/api/countries/fifty-coins-status', async (req, res) => {
+  try {
+    let hidden = false; // Default value
+    
+    if (mongoConnected && db) {
+      const result = await db.collection('gameSettings').findOne({ type: 'fiftyCoinsCountriesHidden' });
+      if (result) {
+        hidden = result.hidden;
+      }
+    }
+    
+    res.json({ hidden });
+  } catch (error) {
+    console.error('Get 50 coins countries visibility status error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Admin change country ownership
 app.post('/api/admin/countries/ownership', authenticateToken, requireAdmin, async (req, res) => {
   try {
