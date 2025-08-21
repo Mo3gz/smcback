@@ -6169,17 +6169,25 @@ app.post('/api/admin/users/:userId/coins', authenticateToken, requireAdmin, asyn
     await sendAdminNotificationToAdmins(adminAction);
     
     // Emit user update only to the specific user
-    io.to(userId).emit('user-update', {
+    const userUpdateData = {
       id: userId,
       teamName: user.teamName,
       coins: newCoins,
       score: user.score
-    });
+    };
+    console.log(`📡 Sending user-update to user ${userId} (${user.teamName}):`, userUpdateData);
+    
+    // Send to user's room
+    io.to(userId).emit('user-update', userUpdateData);
+    
+    // Also send as a general update to ensure delivery
+    io.emit('user-update', userUpdateData);
     
     // Update scoreboard for all users (if scoreboard is not hidden)
     const scoreboardUsers = await getFilteredScoreboardData();
     
     // Send scoreboard update to all users
+    console.log(`📊 Sending scoreboard-update to all users with ${scoreboardUsers.length} visible teams`);
     io.emit('scoreboard-update', scoreboardUsers);
     
     res.json({ 
@@ -6259,17 +6267,25 @@ app.post('/api/admin/users/:userId/score', authenticateToken, requireAdmin, asyn
     await sendAdminNotificationToAdmins(adminAction);
     
     // Emit user update only to the specific user
-    io.to(userId).emit('user-update', {
+    const userUpdateData = {
       id: userId,
       teamName: user.teamName,
       coins: user.coins,
       score: newScore
-    });
+    };
+    console.log(`📡 Sending user-update to user ${userId} (${user.teamName}):`, userUpdateData);
+    
+    // Send to user's room
+    io.to(userId).emit('user-update', userUpdateData);
+    
+    // Also send as a general update to ensure delivery
+    io.emit('user-update', userUpdateData);
     
     // Update scoreboard for all users (if scoreboard is not hidden)
     const scoreboardUsers = await getFilteredScoreboardData();
     
     // Send scoreboard update to all users
+    console.log(`📊 Sending scoreboard-update to all users with ${scoreboardUsers.length} visible teams`);
     io.emit('scoreboard-update', scoreboardUsers);
     
     res.json({ 
@@ -6407,13 +6423,48 @@ async function sendAdminNotificationToAdmins(notification) {
 async function getFilteredScoreboardData() {
   try {
     const users = await getAllUsers();
+    console.log(`📊 getFilteredScoreboardData: Processing ${users.length} total users`);
+    
+    // Ensure all users have proper team settings
+    for (const user of users) {
+      if (user.role === 'user' && (!user.teamSettings || !user.teamSettings.hasOwnProperty('scoreboardVisible'))) {
+        console.log(`🔧 Fixing team settings for user ${user.teamName} (${user.id})`);
+        
+        const defaultTeamSettings = {
+          scoreboardVisible: true,
+          spinLimitations: {
+            lucky: { enabled: true, limit: 1 },
+            gamehelper: { enabled: true, limit: 1 },
+            challenge: { enabled: true, limit: 1 },
+            hightier: { enabled: true, limit: 1 },
+            lowtier: { enabled: true, limit: 1 },
+            random: { enabled: true, limit: 1 }
+          },
+          spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
+        };
+        
+        // Update user in database
+        await updateUserById(user.id, { teamSettings: defaultTeamSettings });
+        console.log(`✅ Fixed team settings for user ${user.teamName}`);
+        
+        // Update local user object
+        user.teamSettings = defaultTeamSettings;
+      }
+    }
     
     // Filter users for scoreboard based on visibility settings
     const scoreboardUsers = users
       .filter(user => user.role === 'user')
       .filter(user => {
-        const teamSettings = user.teamSettings || {};
-        return teamSettings.scoreboardVisible !== false;
+        // If user has no teamSettings, default to visible
+        if (!user.teamSettings) {
+          console.log(`👁️ Team ${user.teamName}: No teamSettings, defaulting to visible`);
+          return true;
+        }
+        
+        const isVisible = user.teamSettings.scoreboardVisible !== false; // Default to true if not set
+        console.log(`👁️ Team ${user.teamName}: scoreboardVisible = ${user.teamSettings.scoreboardVisible}, isVisible = ${isVisible}`);
+        return isVisible;
       })
       .map(user => ({
         id: user.id || user._id,
@@ -6423,6 +6474,7 @@ async function getFilteredScoreboardData() {
       }))
       .sort((a, b) => b.score - a.score);
     
+    console.log(`📊 getFilteredScoreboardData: Returning ${scoreboardUsers.length} visible users`);
     return scoreboardUsers;
   } catch (error) {
     console.error('Error getting filtered scoreboard data:', error);
