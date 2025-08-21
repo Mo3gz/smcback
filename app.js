@@ -4415,7 +4415,8 @@ let gameSettings = {
   11: { enabled: true, name: 'Game 11' },
   12: { enabled: true, name: 'Game 12' },
   // Global settings
-  fiftyCoinsCountriesHidden: false // Global setting for 50 coins countries visibility
+  fiftyCoinsCountriesHidden: false, // Global setting for 50 coins countries visibility
+  gameSelectionCardsHidden: false // Global setting for game selection cards visibility
 };
 
 // Load game settings from database
@@ -4446,6 +4447,22 @@ async function loadGameSettings() {
           { upsert: true }
         );
         console.log('✅ Initialized default fifty coins countries hidden status');
+      }
+      
+      // Load game selection cards hidden status from separate collection
+      const gameSelectionCardsDoc = await db.collection('gameSettings').findOne({ type: 'gameSelectionCardsHidden' });
+      if (gameSelectionCardsDoc && typeof gameSelectionCardsDoc.hidden === 'boolean') {
+        gameSettings.gameSelectionCardsHidden = gameSelectionCardsDoc.hidden;
+        console.log('✅ Game selection cards hidden status loaded from database:', gameSelectionCardsDoc.hidden);
+      } else {
+        // Initialize default value if not found
+        gameSettings.gameSelectionCardsHidden = false;
+        await db.collection('gameSettings').updateOne(
+          { type: 'gameSelectionCardsHidden' },
+          { $set: { hidden: false, updatedAt: new Date() } },
+          { upsert: true }
+        );
+        console.log('✅ Initialized default game selection cards hidden status');
       }
       
       // Validate the loaded settings
@@ -4552,7 +4569,8 @@ async function resetGameSettings() {
     11: { enabled: true, name: 'Game 11' },
     12: { enabled: true, name: 'Game 12' },
     // Global settings
-    fiftyCoinsCountriesHidden: false // Global setting for 50 coins countries visibility
+    fiftyCoinsCountriesHidden: false, // Global setting for 50 coins countries visibility
+    gameSelectionCardsHidden: false // Global setting for game selection cards visibility
   };
   await saveGameSettings();
   console.log('✅ Game settings reset to defaults');
@@ -4684,7 +4702,14 @@ function getCardsByType(spinType) {
     return [randomCards[Math.floor(Math.random() * randomCards.length)]];
   }
 
-  return cards[spinType] || [];
+  let resultCards = cards[spinType] || [];
+  
+  // Filter out cards that require game selection if the setting is enabled
+  if (gameSettings.gameSelectionCardsHidden) {
+    resultCards = resultCards.filter(card => !card.requiresGameSelection);
+  }
+
+  return resultCards;
 }
 
 // Socket.IO connection handling
@@ -4693,6 +4718,9 @@ io.on('connection', (socket) => {
 
   // Send current global 50 coins visibility state to new connections
   socket.emit('fifty-coins-countries-visibility-update', { hidden: gameSettings.fiftyCoinsCountriesHidden });
+  
+  // Send current global game selection cards visibility state to new connections
+  socket.emit('game-selection-cards-visibility-update', { hidden: gameSettings.gameSelectionCardsHidden });
 
   socket.on('join-team', (teamId) => {
     socket.join(teamId);
@@ -5706,6 +5734,41 @@ app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAd
   }
 });
 
+// Admin toggle game selection cards visibility globally
+app.post('/api/admin/cards/toggle-game-selection', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { hidden } = req.body;
+    
+    if (typeof hidden !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid visibility status' });
+    }
+    
+    // Save to separate collection instead of gameSettings
+    if (mongoConnected && db) {
+      await db.collection('gameSettings').updateOne(
+        { type: 'gameSelectionCardsHidden' },
+        { $set: { hidden, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    
+    // Update in-memory variable for backward compatibility
+    gameSettings.gameSelectionCardsHidden = hidden;
+    
+    // Emit to all clients about game selection cards visibility change
+    io.emit('game-selection-cards-visibility-update', { hidden });
+    
+    res.json({ 
+      success: true, 
+      hidden: hidden,
+      message: `Game selection cards are now ${hidden ? 'hidden' : 'visible'}`
+    });
+  } catch (error) {
+    console.error('Toggle game selection cards visibility error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Admin get 50 coins countries visibility status
 app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -5721,6 +5784,25 @@ app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdm
     res.json({ hidden });
   } catch (error) {
     console.error('Get 50 coins countries visibility status error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get game selection cards visibility status
+app.get('/api/admin/cards/game-selection-status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    let hidden = false; // Default value
+    
+    if (mongoConnected && db) {
+      const result = await db.collection('gameSettings').findOne({ type: 'gameSelectionCardsHidden' });
+      if (result) {
+        hidden = result.hidden;
+      }
+    }
+    
+    res.json({ hidden });
+  } catch (error) {
+    console.error('Get game selection cards visibility status error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
