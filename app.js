@@ -2408,6 +2408,26 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
         await addNotification(speedBuyNotification);
         io.to(userId).emit('notification', speedBuyNotification);
         
+        // Send admin notification for Speed Buy completion
+        const speedBuyCompletionNotification = {
+          id: (Date.now() + 1).toString(),
+          type: 'speed-buy-completed',
+          teamId: userId,
+          teamName: user.teamName,
+          message: `Team ${user.teamName} got +50 bonus because he bought ${country.name} in 10 mins interval`,
+          timestamp: new Date().toISOString(),
+          read: false,
+          recipientType: 'admin',
+          metadata: {
+            challengeType: 'speed_buy',
+            countryName: country.name,
+            reward: speedBuyReward,
+            timeElapsed: Date.now() - timer.startTime
+          }
+        };
+        await addNotification(speedBuyCompletionNotification);
+        io.emit('admin-notification', speedBuyCompletionNotification);
+        
         // Clear the timer
         delete global.speedBuyTimers[userId];
         
@@ -2577,7 +2597,7 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       const adminNotification = {
         id: (Date.now() + 1).toString(),
         type: 'card-used',
-        message: `Team ${user.teamName} used Borrow card to purchase ${country.name} for ${country.cost} kaizen. New balance: ${finalCoins} kaizen`,
+        message: `Team ${user.teamName} used Borrow card to purchase ${country.name} for ${country.cost} kaizen. Balance before: ${user.coins} kaizen, Balance after: ${finalCoins} kaizen`,
         teamId: req.user.id,
         teamName: user.teamName,
         cardName: card.name,
@@ -2810,6 +2830,26 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
       }
     }
 
+    // Send admin notification for spin with promocode
+    if (promoCode) {
+      const adminSpinNotification = {
+        id: (Date.now() + 1).toString(),
+        type: 'spin-with-promo',
+        teamId: req.user.id,
+        teamName: user.teamName,
+        message: `Team ${user.teamName} spun with promocode: ${promoCode}`,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'admin',
+        metadata: {
+          spinType: spinType,
+          promoCode: promoCode
+        }
+      };
+      await addNotification(adminSpinNotification);
+      io.emit('admin-notification', adminSpinNotification);
+    }
+
     if (user.coins < cost) {
       return res.status(400).json({ error: 'Insufficient kaizen' });
     }
@@ -2967,6 +3007,25 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         additionalData.timerStarted = true;
         additionalData.duration = 10;
         isInstantAction = true;
+        
+        // Send admin notification for Speed Buy challenge started
+        const speedBuyStartNotification = {
+          id: (Date.now() + 1).toString(),
+          type: 'speed-buy-started',
+          teamId: req.user.id,
+          teamName: user.teamName,
+          message: `Team ${user.teamName} got Speed Buy challenge`,
+          timestamp: new Date().toISOString(),
+          read: false,
+          recipientType: 'admin',
+          metadata: {
+            challengeType: 'speed_buy',
+            duration: 10,
+            reward: 50
+          }
+        };
+        await addNotification(speedBuyStartNotification);
+        io.emit('admin-notification', speedBuyStartNotification);
         break;
 
       case 'mcq':
@@ -4725,7 +4784,7 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
       userId: req.user.id,
       type: 'mcq-reward',
       message: isCorrect 
-        ? `Correct answer! You earned ${rewardCoins} coins!`
+        ? `Correct answer! You earned ${rewardCoins} kaizen!`
         : `Wrong answer! No penalty - try again next time.`,
       timestamp: new Date().toISOString(),
       read: false,
@@ -4733,6 +4792,27 @@ app.post('/api/mcq/answer', authenticateToken, async (req, res) => {
     };
     await addNotification(notification);
     io.to(req.user.id).emit('notification', notification);
+
+    // Send admin notification for MCQ answer
+    const adminNotification = {
+      id: (Date.now() + 1).toString(),
+      type: 'mcq-answer',
+      teamId: req.user.id,
+      teamName: user.teamName,
+      message: `Team ${user.teamName} answered mystery question: ${isCorrect ? 'TRUE +100 kaizen' : 'FALSE +0 kaizen'}`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        questionId: questionId,
+        userAnswer: answer,
+        correctAnswer: question.correct,
+        isCorrect: isCorrect,
+        reward: rewardCoins
+      }
+    };
+    await addNotification(adminNotification);
+    io.emit('admin-notification', adminNotification);
     
     // Update scoreboard
     const updatedUsers = await getAllUsers();
@@ -6551,7 +6631,7 @@ app.get('/api/admin/game-settings', authenticateToken, requireAdmin, async (req,
       gameScheduleVisible,
       visibleSets,
       availableTeams: Object.keys(defaultTeamGameSchedules),
-      availableSets: Object.keys(defaultTeamGameSchedules.teamA)
+      availableSets: Object.keys(defaultTeamGameSchedules.team1)
     };
     
     console.log('📤 Sending response:', JSON.stringify(responseData, null, 2));
