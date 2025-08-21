@@ -3454,48 +3454,143 @@ app.put('/api/admin/promocodes/:id', authenticateToken, requireAdmin, async (req
       return res.status(404).json({ error: 'Promocode not found' });
     }
     
-    // If assigning to a team, send notification
-    if (teamId && teamId !== updatedPromo.teamId) {
-      const user = await findUserById(teamId);
-      if (user) {
-        const teamNotification = {
-          id: Date.now().toString(),
-          userId: teamId,
-          type: 'promo-code',
-          message: `You received a promo code: ${updatedPromo.code} with ${updatedPromo.discount}% discount!`,
-          timestamp: new Date().toISOString(),
-          read: false,
-          recipientType: 'user'
-        };
-        await addNotification(teamNotification);
-        io.to(teamId).emit('notification', teamNotification);
-        
-        // Create admin action notification
-        const adminAction = {
-          id: (Date.now() + 1).toString(),
-          userId: req.user.id,
-          type: 'admin-action',
-          actionType: 'promo-code-assigned',
-          message: `Admin ${adminUser.teamName} assigned promo code (${updatedPromo.code}) to team ${user.teamName}.`,
-          timestamp: new Date().toISOString(),
-          read: false,
-          recipientType: 'admin',
-          metadata: {
-            targetTeamId: teamId,
-            targetTeamName: user.teamName,
-            promoCode: updatedPromo.code,
-            discount: updatedPromo.discount
-          }
-        };
-        
-        await addNotification(adminAction);
-        io.emit('admin-notification', adminAction);
+    // Enhanced notifications for different types of updates
+    let notificationMessage = '';
+    let actionType = '';
+    let metadata = {
+      promoCode: updatedPromo.code,
+      discount: updatedPromo.discount
+    };
+
+    // Check what was updated and create appropriate notifications
+    if (teamId !== undefined) {
+      if (teamId && teamId !== updatedPromo.teamId) {
+        // Promocode assigned to a team
+        const user = await findUserById(teamId);
+        if (user) {
+          // Team notification
+          const teamNotification = {
+            id: Date.now().toString(),
+            userId: teamId,
+            type: 'promo-code',
+            message: `You received a promo code: ${updatedPromo.code} with ${updatedPromo.discount}% discount!`,
+            timestamp: new Date().toISOString(),
+            read: false,
+            recipientType: 'user'
+          };
+          await addNotification(teamNotification);
+          io.to(teamId).emit('notification', teamNotification);
+          
+          notificationMessage = `Admin ${adminUser.teamName} assigned promo code (${updatedPromo.code}) to team ${user.teamName}.`;
+          actionType = 'promo-code-assigned';
+          metadata.targetTeamId = teamId;
+          metadata.targetTeamName = user.teamName;
+        }
+      } else if (!teamId && updatedPromo.teamId) {
+        // Promocode unassigned from a team
+        const previousUser = await findUserById(updatedPromo.teamId);
+        if (previousUser) {
+          notificationMessage = `Admin ${adminUser.teamName} unassigned promo code (${updatedPromo.code}) from team ${previousUser.teamName}.`;
+          actionType = 'promo-code-unassigned';
+          metadata.targetTeamId = updatedPromo.teamId;
+          metadata.targetTeamName = previousUser.teamName;
+        }
       }
+    }
+
+    if (discount !== undefined && discount !== updatedPromo.discount) {
+      // Discount percentage was changed
+      const oldDiscount = updatedPromo.discount;
+      const teamUser = teamId ? await findUserById(teamId) : null;
+      const teamName = teamUser ? teamUser.teamName : 'Unassigned';
+      
+      notificationMessage = `Admin ${adminUser.teamName} changed promo code (${updatedPromo.code}) discount from ${oldDiscount}% to ${discount}% for ${teamName}.`;
+      actionType = 'promo-code-discount-changed';
+      metadata.oldDiscount = oldDiscount;
+      metadata.newDiscount = discount;
+      metadata.targetTeamName = teamName;
+    }
+
+    // Send admin notification if there's a message
+    if (notificationMessage && actionType) {
+      const adminAction = {
+        id: (Date.now() + 1).toString(),
+        userId: req.user.id,
+        type: 'admin-action',
+        actionType: actionType,
+        message: notificationMessage,
+        timestamp: new Date().toISOString(),
+        read: false,
+        recipientType: 'admin',
+        metadata: metadata
+      };
+      
+      await addNotification(adminAction);
+      io.emit('admin-notification', adminAction);
     }
     
     res.json(updatedPromo);
   } catch (error) {
     console.error('Update promocode error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete promocode
+app.delete('/api/admin/promocodes/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminUser = await findUserById(req.user.id);
+    
+    // Find the promocode before deleting
+    let promocodeToDelete = null;
+    if (mongoConnected && db) {
+      promocodeToDelete = await db.collection('promoCodes').findOne({ id });
+    } else {
+      promocodeToDelete = promoCodes.find(p => p.id === id);
+    }
+    
+    if (!promocodeToDelete) {
+      return res.status(404).json({ error: 'Promocode not found' });
+    }
+    
+    // Delete the promocode
+    if (mongoConnected && db) {
+      await db.collection('promoCodes').deleteOne({ id });
+    } else {
+      const promoIndex = promoCodes.findIndex(p => p.id === id);
+      if (promoIndex !== -1) {
+        promoCodes.splice(promoIndex, 1);
+      }
+    }
+    
+    // Create admin action notification
+    const adminAction = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'admin-action',
+      actionType: 'promo-code-deleted',
+      message: `Admin ${adminUser.teamName} deleted promo code (${promocodeToDelete.code}) with ${promocodeToDelete.discount}% discount.`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        promoCode: promocodeToDelete.code,
+        discount: promocodeToDelete.discount,
+        wasAssigned: !!promocodeToDelete.teamId,
+        wasUsed: promocodeToDelete.used
+      }
+    };
+    
+    await addNotification(adminAction);
+    io.emit('admin-notification', adminAction);
+    
+    res.json({ 
+      message: 'Promocode deleted successfully',
+      deletedPromocode: promocodeToDelete
+    });
+  } catch (error) {
+    console.error('Delete promocode error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
