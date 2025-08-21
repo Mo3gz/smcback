@@ -4415,8 +4415,7 @@ let gameSettings = {
   11: { enabled: true, name: 'Game 11' },
   12: { enabled: true, name: 'Game 12' },
   // Global settings
-  fiftyCoinsCountriesHidden: false, // Global setting for 50 coins countries visibility
-  gameSelectionCardsHidden: false // Global setting for game selection cards visibility
+  fiftyCoinsCountriesHidden: false // Global setting for 50 coins countries visibility
 };
 
 // Load game settings from database
@@ -4447,22 +4446,6 @@ async function loadGameSettings() {
           { upsert: true }
         );
         console.log('✅ Initialized default fifty coins countries hidden status');
-      }
-      
-      // Load game selection cards hidden status from separate collection
-      const gameSelectionCardsDoc = await db.collection('gameSettings').findOne({ type: 'gameSelectionCardsHidden' });
-      if (gameSelectionCardsDoc && typeof gameSelectionCardsDoc.hidden === 'boolean') {
-        gameSettings.gameSelectionCardsHidden = gameSelectionCardsDoc.hidden;
-        console.log('✅ Game selection cards hidden status loaded from database:', gameSelectionCardsDoc.hidden);
-      } else {
-        // Initialize default value if not found
-        gameSettings.gameSelectionCardsHidden = false;
-        await db.collection('gameSettings').updateOne(
-          { type: 'gameSelectionCardsHidden' },
-          { $set: { hidden: false, updatedAt: new Date() } },
-          { upsert: true }
-        );
-        console.log('✅ Initialized default game selection cards hidden status');
       }
       
       // Validate the loaded settings
@@ -4569,8 +4552,7 @@ async function resetGameSettings() {
     11: { enabled: true, name: 'Game 11' },
     12: { enabled: true, name: 'Game 12' },
     // Global settings
-    fiftyCoinsCountriesHidden: false, // Global setting for 50 coins countries visibility
-    gameSelectionCardsHidden: false // Global setting for game selection cards visibility
+    fiftyCoinsCountriesHidden: false // Global setting for 50 coins countries visibility
   };
   await saveGameSettings();
   console.log('✅ Game settings reset to defaults');
@@ -4653,9 +4635,16 @@ function getAvailableGames() {
     };
   }
   
-  const availableGames = Object.keys(gameSettings)
+  let availableGames = Object.keys(gameSettings)
     .filter(gameId => gameSettings[gameId] && gameSettings[gameId].enabled)
     .map(gameId => gameId); // Return just the game IDs as strings
+  
+  // Filter out games when fiftyCoinsCountriesHidden is active
+  if (gameSettings.fiftyCoinsCountriesHidden) {
+    console.log('🎮 fiftyCoinsCountriesHidden is active, filtering out games');
+    availableGames = availableGames.filter(gameId => gameId !== 'fiftyCoinsCountriesHidden');
+  }
+  
   console.log('🎮 getAvailableGames result:', availableGames);
   return availableGames;
 }
@@ -4702,14 +4691,7 @@ function getCardsByType(spinType) {
     return [randomCards[Math.floor(Math.random() * randomCards.length)]];
   }
 
-  let resultCards = cards[spinType] || [];
-  
-  // Filter out cards that require game selection if the setting is enabled
-  if (gameSettings.gameSelectionCardsHidden) {
-    resultCards = resultCards.filter(card => !card.requiresGameSelection);
-  }
-
-  return resultCards;
+  return cards[spinType] || [];
 }
 
 // Socket.IO connection handling
@@ -4718,9 +4700,6 @@ io.on('connection', (socket) => {
 
   // Send current global 50 coins visibility state to new connections
   socket.emit('fifty-coins-countries-visibility-update', { hidden: gameSettings.fiftyCoinsCountriesHidden });
-  
-  // Send current global game selection cards visibility state to new connections
-  socket.emit('game-selection-cards-visibility-update', { hidden: gameSettings.gameSelectionCardsHidden });
 
   socket.on('join-team', (teamId) => {
     socket.join(teamId);
@@ -5734,41 +5713,6 @@ app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAd
   }
 });
 
-// Admin toggle game selection cards visibility globally
-app.post('/api/admin/cards/toggle-game-selection', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { hidden } = req.body;
-    
-    if (typeof hidden !== 'boolean') {
-      return res.status(400).json({ error: 'Invalid visibility status' });
-    }
-    
-    // Save to separate collection instead of gameSettings
-    if (mongoConnected && db) {
-      await db.collection('gameSettings').updateOne(
-        { type: 'gameSelectionCardsHidden' },
-        { $set: { hidden, updatedAt: new Date() } },
-        { upsert: true }
-      );
-    }
-    
-    // Update in-memory variable for backward compatibility
-    gameSettings.gameSelectionCardsHidden = hidden;
-    
-    // Emit to all clients about game selection cards visibility change
-    io.emit('game-selection-cards-visibility-update', { hidden });
-    
-    res.json({ 
-      success: true, 
-      hidden: hidden,
-      message: `Game selection cards are now ${hidden ? 'hidden' : 'visible'}`
-    });
-  } catch (error) {
-    console.error('Toggle game selection cards visibility error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // Admin get 50 coins countries visibility status
 app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -5784,25 +5728,6 @@ app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdm
     res.json({ hidden });
   } catch (error) {
     console.error('Get 50 coins countries visibility status error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Admin get game selection cards visibility status
-app.get('/api/admin/cards/game-selection-status', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    let hidden = false; // Default value
-    
-    if (mongoConnected && db) {
-      const result = await db.collection('gameSettings').findOne({ type: 'gameSelectionCardsHidden' });
-      if (result) {
-        hidden = result.hidden;
-      }
-    }
-    
-    res.json({ hidden });
-  } catch (error) {
-    console.error('Get game selection cards visibility status error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -6624,14 +6549,11 @@ app.get('/api/game-schedule', async (req, res) => {
     }
     
     // Default to team1 if no team specified
-    const selectedTeam = team || 'team1';
+    const selectedTeam = team && teamGameSchedules[team] ? team : 'team1';
     
-    // Check if we have custom schedules for this team, otherwise use defaults
-    const hasCustomSchedules = teamGameSchedules[selectedTeam] && 
-                              teamGameSchedules[selectedTeam][activeContentSet] && 
-                              teamGameSchedules[selectedTeam][activeContentSet].length > 0;
-    
-    const schedule = hasCustomSchedules 
+    const schedule = teamGameSchedules[selectedTeam] && 
+                    teamGameSchedules[selectedTeam][activeContentSet] && 
+                    teamGameSchedules[selectedTeam][activeContentSet].length > 0 
       ? teamGameSchedules[selectedTeam][activeContentSet] 
       : defaultTeamGameSchedules[selectedTeam][activeContentSet];
     
@@ -6814,16 +6736,13 @@ app.get('/api/admin/game-settings', authenticateToken, requireAdmin, async (req,
     console.log('📊 Default teamGameSchedules:', JSON.stringify(defaultTeamGameSchedules, null, 2));
     
     // Check if teamGameSchedules has any data
-    const hasTeamData = Object.keys(teamGameSchedules).length > 0 && 
-      Object.keys(teamGameSchedules).some(team => 
-        teamGameSchedules[team] && 
-        Object.keys(teamGameSchedules[team]).some(set => 
-          teamGameSchedules[team][set] && teamGameSchedules[team][set].length > 0
-        )
-      );
+    const hasTeamData = Object.keys(teamGameSchedules).some(team => 
+      Object.keys(teamGameSchedules[team]).some(set => 
+        teamGameSchedules[team][set] && teamGameSchedules[team][set].length > 0
+      )
+    );
     
     console.log('🔍 Has team data:', hasTeamData);
-    console.log('🔍 teamGameSchedules keys:', Object.keys(teamGameSchedules));
     
     const responseData = {
       teamGameSchedules: hasTeamData ? teamGameSchedules : defaultTeamGameSchedules,
@@ -6839,38 +6758,6 @@ app.get('/api/admin/game-settings', authenticateToken, requireAdmin, async (req,
     res.json(responseData);
   } catch (error) {
     console.error('Error fetching game settings:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Admin: Get default schedules
-app.get('/api/admin/default-schedules', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    console.log('📋 Admin fetching default schedules');
-    res.json({ schedules: defaultTeamGameSchedules });
-  } catch (error) {
-    console.error('Error fetching default schedules:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Admin: Get specific team schedules
-app.get('/api/admin/team-schedules/:teamId', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { teamId } = req.params;
-    console.log('📋 Admin fetching schedules for team:', teamId);
-    
-    // Check if we have custom schedules for this team, otherwise use defaults
-    const hasCustomSchedules = teamGameSchedules[teamId] && 
-                              Object.keys(teamGameSchedules[teamId]).some(set => 
-                                teamGameSchedules[teamId][set] && teamGameSchedules[teamId][set].length > 0
-                              );
-    
-    const schedules = hasCustomSchedules ? teamGameSchedules[teamId] : defaultTeamGameSchedules[teamId];
-    
-    res.json({ schedules });
-  } catch (error) {
-    console.error('Error fetching team schedules:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -6894,7 +6781,32 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 // Game Schedule System - Now supports team-specific data
-let teamGameSchedules = {};
+let teamGameSchedules = {
+  team1: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  team2: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  team3: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  team4: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  team5: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  team6: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  team7: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  },
+  team8: {
+    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
+  }
+};
 let activeContentSet = 'contentSet1'; // Admin can change this
 let gameScheduleVisible = true; // Admin can hide/show game schedule
 let visibleSets = ['contentSet1', 'contentSet2', 'contentSet3', 'contentSet4']; // Which sets are visible
