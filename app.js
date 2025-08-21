@@ -2321,7 +2321,7 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
 
     if (user.coins < country.cost) {
       console.log('❌ Insufficient coins:', { userCoins: user.coins, countryCost: country.cost });
-      return res.status(400).json({ error: 'Insufficient coins' });
+      return res.status(400).json({ error: 'Insufficient kaizen' });
     }
 
     let newCoins = user.coins - country.cost;
@@ -2400,7 +2400,7 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
           id: Date.now().toString(),
           userId: userId,
           type: 'speedbuy-completed',
-          message: `Speed Buy Challenge completed! You earned an additional ${speedBuyReward} coins for buying ${country.name}!`,
+          message: `Speed Buy Challenge completed! You earned an additional ${speedBuyReward} kaizen for buying ${country.name}!`,
           timestamp: new Date().toISOString(),
           read: false,
           recipientType: 'user'
@@ -2421,7 +2421,7 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       id: Date.now().toString(),
       userId: userId,
       type: 'country-purchased',
-      message: `You purchased ${country.name} for ${country.cost} coins!`,
+              message: `You purchased ${country.name} for ${country.cost} kaizen!`,
       timestamp: new Date().toISOString(),
       read: false,
       recipientType: 'user'
@@ -2446,7 +2446,7 @@ app.post('/api/countries/buy', authenticateToken, async (req, res) => {
       type: 'country-bought',
       teamId: userId,
       teamName: user.teamName,
-      message: `${user.teamName} bought ${country.name} for ${country.cost} coins`,
+              message: `${user.teamName} bought ${country.name} for ${country.cost} kaizen`,
       countryName: country.name,
       countryId: country.id,
       cost: country.cost,
@@ -2500,7 +2500,7 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
     }
 
     // Special handling for borrow card
-    if (card.name === "Borrow coins to buy a country") {
+    if (card.name === "Borrow kaizen to buy a country") {
       const { selectedCountry } = req.body;
       
       if (!selectedCountry) {
@@ -2565,7 +2565,7 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
         id: Date.now().toString(),
         userId: userId,
         type: 'country-purchased',
-        message: `You purchased ${country.name} for ${country.cost} coins using the Borrow card! New balance: ${finalCoins} coins`,
+        message: `You purchased ${country.name} for ${country.cost} kaizen using the Borrow card! New balance: ${finalCoins} kaizen`,
         timestamp: new Date().toISOString(),
         read: false,
         recipientType: 'user'
@@ -2577,13 +2577,13 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       const adminNotification = {
         id: (Date.now() + 1).toString(),
         type: 'card-used',
-        message: `Team ${user.teamName} used Borrow card to purchase ${country.name} for ${country.cost} coins. New balance: ${finalCoins} coins`,
+        message: `Team ${user.teamName} used Borrow card to purchase ${country.name} for ${country.cost} kaizen. New balance: ${finalCoins} kaizen`,
         teamId: req.user.id,
         teamName: user.teamName,
         cardName: card.name,
         cardType: card.type,
         selectedCountry: country.name,
-        description: `Purchased ${country.name} for ${country.cost} coins`,
+        description: `Purchased ${country.name} for ${country.cost} kaizen`,
         timestamp: new Date().toISOString(),
         read: false,
         recipientType: 'admin'
@@ -2606,7 +2606,7 @@ app.post('/api/cards/use', authenticateToken, async (req, res) => {
       
       return res.json({ 
         success: true,
-        message: 'Country purchased successfully with borrowed coins!',
+        message: 'Country purchased successfully with borrowed kaizen!',
         purchasedCountry: country,
         newBalance: finalCoins,
         newScore: newScore
@@ -2786,7 +2786,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
           userId: null, // Admin notification
           type: 'admin-action',
           actionType: 'promo-code-used',
-          message: `Team ${user.teamName} used promo code "${promoCode}" (${promo.discount}% discount, saved ${originalCost - cost} coins)`,
+          message: `Team ${user.teamName} used promo code "${promoCode}" (${promo.discount}% discount, saved ${originalCost - cost} kaizen)`,
           timestamp: new Date().toISOString(),
           read: false,
           recipientType: 'admin',
@@ -2806,12 +2806,12 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
         // Emit to all admin clients
         io.emit('admin-notification', adminNotification);
         
-        console.log(`💳 Promo code "${promoCode}" used by team ${user.teamName}, saved ${originalCost - cost} coins`);
+        console.log(`💳 Promo code "${promoCode}" used by team ${user.teamName}, saved ${originalCost - cost} kaizen`);
       }
     }
 
     if (user.coins < cost) {
-      return res.status(400).json({ error: 'Insufficient coins' });
+      return res.status(400).json({ error: 'Insufficient kaizen' });
     }
 
     const newCoins = user.coins - cost;
@@ -2891,8 +2891,8 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
             userId: req.user.id,
             type: coinChange > 0 ? 'coins-gained' : 'coins-lost',
             message: coinChange > 0 
-              ? `You gained ${coinChange} coins instantly!`
-              : `You lost ${Math.abs(coinChange)} coins instantly!`,
+                      ? `You gained ${coinChange} kaizen instantly!`
+        : `You lost ${Math.abs(coinChange)} kaizen instantly!`,
             timestamp: new Date().toISOString(),
             read: false,
             recipientType: 'user'
@@ -2902,7 +2902,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
           // Send socket notification to the user
           io.to(req.user.id).emit('notification', coinChangeNotification);
           
-          console.log(`💰 ${user.teamName} ${coinChange > 0 ? 'gained' : 'lost'} ${Math.abs(coinChange)} coins instantly`);
+          console.log(`💰 ${user.teamName} ${coinChange > 0 ? 'gained' : 'lost'} ${Math.abs(coinChange)} kaizen instantly`);
         }
         break;
 
@@ -4438,10 +4438,10 @@ function getAvailableGames() {
 function getCardsByType(spinType) {
   const cards = {
     lucky: [
-      { name: "+100 Coins Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: 100 },
-      { name: "Borrow coins to buy a country", type: 'lucky', effect: 'Balance may go negative, limit -200', actionType: 'admin', requiresTeamSelection: false },
+              { name: "+100 Kaizen Instantly", type: 'lucky', effect: '', actionType: 'instant', coinChange: 100 },
+      { name: "Borrow kaizen to buy a country", type: 'lucky', effect: 'Balance may go negative, limit -200', actionType: 'admin', requiresTeamSelection: false },
       { name: "Game Protection", type: 'lucky', effect: 'Protection for selected game', actionType: 'admin', requiresGameSelection: true },
-      { name: "+50 Coins to random team", type: 'lucky', effect: '+50 coins given to another random team', actionType: 'random_gift' }
+              { name: "+50 Kaizen to random team", type: 'lucky', effect: '+50 kaizen given to another random team', actionType: 'random_gift' }
     ],
     gamehelper: [
       { name: "Secret Info", type: 'gamehelper', effect: 'Choose game: Instantly reveals opponent & game details', actionType: 'admin', requiresGameSelection: true },
