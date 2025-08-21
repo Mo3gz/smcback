@@ -6234,9 +6234,9 @@ app.post('/api/admin/active-content-set', authenticateToken, requireAdmin, async
     console.log('🎯 Admin setting active content set:', req.body);
     const { contentSet } = req.body;
     
-    if (!contentSet || !defaultGameSchedules[contentSet]) {
+    if (!contentSet || !defaultTeamGameSchedules.teamA[contentSet]) {
       return res.status(400).json({ 
-        error: 'Invalid content set. Available sets: ' + Object.keys(defaultGameSchedules).join(', ')
+        error: 'Invalid content set. Available sets: ' + Object.keys(defaultTeamGameSchedules.teamA).join(', ')
       });
     }
     
