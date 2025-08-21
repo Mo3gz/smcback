@@ -3345,7 +3345,34 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const notifications = await getAllNotifications();
-    res.json(notifications);
+    
+    // Filter notifications based on current settings
+    const filteredNotifications = notifications.filter(notification => {
+      if (!gameSettings.notifications) return true; // If no settings, show all
+      
+      const notificationType = notification.type || 'general';
+      
+      if (notificationType === 'admin-action' && notification.actionType) {
+        if (notification.actionType.includes('promo-code') && !gameSettings.notifications.promocodes) {
+          return false;
+        } else if (notification.actionType.includes('country') && !gameSettings.notifications.countryPurchases) {
+          return false;
+        } else if (notification.actionType.includes('spin') && !gameSettings.notifications.spinResults) {
+          return false;
+        } else if (!gameSettings.notifications.adminActions) {
+          return false;
+        }
+      } else if (notificationType === 'team-update' && !gameSettings.notifications.teamUpdates) {
+        return false;
+      } else if (notificationType === 'game-schedule' && !gameSettings.notifications.gameSchedule) {
+        return false;
+      }
+      
+      return true;
+    });
+    
+    console.log(`🔔 Admin notifications: ${filteredNotifications.length}/${notifications.length} shown (filtered by settings)`);
+    res.json(filteredNotifications);
   } catch (error) {
     console.error('Get notifications error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -4581,6 +4608,18 @@ let gameSettings = {
 async function loadGameSettings() {
   if (!mongoConnected || !db) {
     console.log('📝 Using in-memory game settings');
+    // Ensure notification settings are available even without database
+    if (!gameSettings.notifications) {
+      gameSettings.notifications = {
+        promocodes: true,
+        countryPurchases: true,
+        spinResults: true,
+        adminActions: true,
+        teamUpdates: true,
+        gameSchedule: true
+      };
+      console.log('🔔 Using default notification settings (no database)');
+    }
     return;
   }
 
@@ -4607,28 +4646,32 @@ async function loadGameSettings() {
         console.log('✅ Initialized default fifty coins countries hidden status');
       }
       
-      // Load notification settings from separate collection
-      const notificationDoc = await db.collection('gameSettings').findOne({ type: 'notificationSettings' });
-      if (notificationDoc && notificationDoc.settings) {
-        gameSettings.notifications = { ...gameSettings.notifications, ...notificationDoc.settings };
-        console.log('✅ Notification settings loaded from database:', notificationDoc.settings);
-      } else {
-        // Initialize default notification settings if not found
-        const defaultNotifications = {
-          promocodes: true,
-          countryPurchases: true,
-          spinResults: true,
-          adminActions: true,
-          teamUpdates: true,
-          gameSchedule: true
-        };
-        await db.collection('gameSettings').updateOne(
-          { type: 'notificationSettings' },
-          { $set: { settings: defaultNotifications, updatedAt: new Date() } },
-          { upsert: true }
-        );
-        console.log('✅ Initialized default notification settings');
-      }
+              // Load notification settings from separate collection
+        const notificationDoc = await db.collection('gameSettings').findOne({ type: 'notificationSettings' });
+        if (notificationDoc && notificationDoc.settings) {
+          gameSettings.notifications = { ...gameSettings.notifications, ...notificationDoc.settings };
+          console.log('✅ Notification settings loaded from database:', notificationDoc.settings);
+        } else {
+          // Initialize default notification settings if not found
+          const defaultNotifications = {
+            promocodes: true,
+            countryPurchases: true,
+            spinResults: true,
+            adminActions: true,
+            teamUpdates: true,
+            gameSchedule: true
+          };
+          await db.collection('gameSettings').updateOne(
+            { type: 'notificationSettings' },
+            { $set: { settings: defaultNotifications, updatedAt: new Date() } },
+            { upsert: true }
+          );
+          console.log('✅ Initialized default notification settings');
+          // Update in-memory settings
+          gameSettings.notifications = { ...gameSettings.notifications, ...defaultNotifications };
+        }
+        
+        console.log('🔔 Final notification settings:', gameSettings.notifications);
       
       // Validate the loaded settings
       const availableGames = getAvailableGames();
@@ -5933,6 +5976,21 @@ app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdm
 // Admin get notification settings
 app.get('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    console.log('🔔 Admin requesting notification settings');
+    console.log('🔔 Current gameSettings.notifications:', gameSettings.notifications);
+    
+    if (!gameSettings.notifications) {
+      console.log('⚠️ No notification settings found, using defaults');
+      gameSettings.notifications = {
+        promocodes: true,
+        countryPurchases: true,
+        spinResults: true,
+        adminActions: true,
+        teamUpdates: true,
+        gameSchedule: true
+      };
+    }
+    
     res.json({
       success: true,
       notifications: gameSettings.notifications
@@ -5948,12 +6006,18 @@ app.post('/api/admin/notification-settings', authenticateToken, requireAdmin, as
   try {
     const { notificationType, enabled } = req.body;
     
+    console.log(`🔔 Updating notification setting: ${notificationType} = ${enabled}`);
+    console.log(`🔔 Current settings before update:`, gameSettings.notifications);
+    
     if (!gameSettings.notifications.hasOwnProperty(notificationType)) {
+      console.log(`❌ Invalid notification type: ${notificationType}`);
       return res.status(400).json({ error: 'Invalid notification type' });
     }
     
     // Update the notification setting
     gameSettings.notifications[notificationType] = enabled;
+    
+    console.log(`🔔 Settings after update:`, gameSettings.notifications);
     
     // Save to database
     await saveNotificationSettings();
