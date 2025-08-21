@@ -419,36 +419,6 @@ async function removeFromUserInventory(userId, itemId) {
 
 // Helper functions for notifications (MongoDB or fallback)
 async function addNotification(notification) {
-  // Check if this type of notification is enabled (admin controlled)
-  const notificationType = notification.type || 'general';
-  
-  // Map notification types to settings
-  let isEnabled = true;
-  if (gameSettings && gameSettings.notifications) {
-    if (notificationType === 'admin-action' && notification.actionType) {
-      // Check specific admin action types
-      if (notification.actionType.includes('promo-code') && !gameSettings.notifications.promocodes) {
-        isEnabled = false;
-      } else if (notification.actionType.includes('country') && !gameSettings.notifications.countryPurchases) {
-        isEnabled = false;
-      } else if (notification.actionType.includes('spin') && !gameSettings.notifications.spinResults) {
-        isEnabled = false;
-      } else if (!gameSettings.notifications.adminActions) {
-        isEnabled = false;
-      }
-    } else if (notificationType === 'team-update' && !gameSettings.notifications.teamUpdates) {
-      isEnabled = false;
-    } else if (notificationType === 'game-schedule' && !gameSettings.notifications.gameSchedule) {
-      isEnabled = false;
-    }
-  }
-  
-  // If notification is disabled, don't add it
-  if (!isEnabled) {
-    console.log(`🔕 Notification disabled for type: ${notificationType}`, notification.actionType || '');
-    return;
-  }
-  
   // Ensure notification has default read status and approval status
   const notificationWithDefaults = {
     ...notification,
@@ -463,8 +433,6 @@ async function addNotification(notification) {
   } else {
     notifications.push(notificationWithDefaults);
   }
-  
-  console.log(`🔔 Notification added (enabled): ${notificationType}`, notification.actionType || '');
 }
 
 async function getAllNotifications() {
@@ -3345,34 +3313,7 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const notifications = await getAllNotifications();
-    
-    // Filter notifications based on current settings
-    const filteredNotifications = notifications.filter(notification => {
-      if (!gameSettings.notifications) return true; // If no settings, show all
-      
-      const notificationType = notification.type || 'general';
-      
-      if (notificationType === 'admin-action' && notification.actionType) {
-        if (notification.actionType.includes('promo-code') && !gameSettings.notifications.promocodes) {
-          return false;
-        } else if (notification.actionType.includes('country') && !gameSettings.notifications.countryPurchases) {
-          return false;
-        } else if (notification.actionType.includes('spin') && !gameSettings.notifications.spinResults) {
-          return false;
-        } else if (!gameSettings.notifications.adminActions) {
-          return false;
-        }
-      } else if (notificationType === 'team-update' && !gameSettings.notifications.teamUpdates) {
-        return false;
-      } else if (notificationType === 'game-schedule' && !gameSettings.notifications.gameSchedule) {
-        return false;
-      }
-      
-      return true;
-    });
-    
-    console.log(`🔔 Admin notifications: ${filteredNotifications.length}/${notifications.length} shown (filtered by settings)`);
-    res.json(filteredNotifications);
+    res.json(notifications);
   } catch (error) {
     console.error('Get notifications error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -4591,35 +4532,13 @@ let gameSettings = {
   11: { enabled: true, name: 'Game 11' },
   12: { enabled: true, name: 'Game 12' },
   // Global settings
-  fiftyCoinsCountriesHidden: false, // Global setting for 50 coins countries visibility
-  
-  // Notification settings - admin controlled only
-  notifications: {
-    promocodes: true,        // Promocode operations
-    countryPurchases: true,  // Country buying/selling
-    spinResults: true,       // Spin game results
-    adminActions: true,      // Admin operations
-    teamUpdates: true,       // Team changes
-    gameSchedule: true       // Game schedule changes
-  }
+  fiftyCoinsCountriesHidden: false // Global setting for 50 coins countries visibility
 };
 
 // Load game settings from database
 async function loadGameSettings() {
   if (!mongoConnected || !db) {
     console.log('📝 Using in-memory game settings');
-    // Ensure notification settings are available even without database
-    if (!gameSettings.notifications) {
-      gameSettings.notifications = {
-        promocodes: true,
-        countryPurchases: true,
-        spinResults: true,
-        adminActions: true,
-        teamUpdates: true,
-        gameSchedule: true
-      };
-      console.log('🔔 Using default notification settings (no database)');
-    }
     return;
   }
 
@@ -4645,33 +4564,6 @@ async function loadGameSettings() {
         );
         console.log('✅ Initialized default fifty coins countries hidden status');
       }
-      
-              // Load notification settings from separate collection
-        const notificationDoc = await db.collection('gameSettings').findOne({ type: 'notificationSettings' });
-        if (notificationDoc && notificationDoc.settings) {
-          gameSettings.notifications = { ...gameSettings.notifications, ...notificationDoc.settings };
-          console.log('✅ Notification settings loaded from database:', notificationDoc.settings);
-        } else {
-          // Initialize default notification settings if not found
-          const defaultNotifications = {
-            promocodes: true,
-            countryPurchases: true,
-            spinResults: true,
-            adminActions: true,
-            teamUpdates: true,
-            gameSchedule: true
-          };
-          await db.collection('gameSettings').updateOne(
-            { type: 'notificationSettings' },
-            { $set: { settings: defaultNotifications, updatedAt: new Date() } },
-            { upsert: true }
-          );
-          console.log('✅ Initialized default notification settings');
-          // Update in-memory settings
-          gameSettings.notifications = { ...gameSettings.notifications, ...defaultNotifications };
-        }
-        
-        console.log('🔔 Final notification settings:', gameSettings.notifications);
       
       // Validate the loaded settings
       const availableGames = getAvailableGames();
@@ -4705,22 +4597,6 @@ async function saveGameSettings() {
     console.log('✅ Game settings saved to database');
   } catch (error) {
     console.error('❌ Error saving game settings:', error);
-  }
-}
-
-// Save notification settings to database
-async function saveNotificationSettings() {
-  if (!mongoConnected || !db) return;
-
-  try {
-    await db.collection('gameSettings').updateOne(
-      { type: 'notificationSettings' },
-      { $set: { settings: gameSettings.notifications, updatedAt: new Date() } },
-      { upsert: true }
-    );
-    console.log('✅ Notification settings saved to database');
-  } catch (error) {
-    console.error('❌ Error saving notification settings:', error);
   }
 }
 
@@ -5969,71 +5845,6 @@ app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdm
     res.json({ hidden });
   } catch (error) {
     console.error('Get 50 coins countries visibility status error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Admin get notification settings
-app.get('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    console.log('🔔 Admin requesting notification settings');
-    console.log('🔔 Current gameSettings.notifications:', gameSettings.notifications);
-    
-    if (!gameSettings.notifications) {
-      console.log('⚠️ No notification settings found, using defaults');
-      gameSettings.notifications = {
-        promocodes: true,
-        countryPurchases: true,
-        spinResults: true,
-        adminActions: true,
-        teamUpdates: true,
-        gameSchedule: true
-      };
-    }
-    
-    res.json({
-      success: true,
-      notifications: gameSettings.notifications
-    });
-  } catch (error) {
-    console.error('Error getting notification settings:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Admin update notification settings
-app.post('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { notificationType, enabled } = req.body;
-    
-    console.log(`🔔 Updating notification setting: ${notificationType} = ${enabled}`);
-    console.log(`🔔 Current settings before update:`, gameSettings.notifications);
-    
-    if (!gameSettings.notifications.hasOwnProperty(notificationType)) {
-      console.log(`❌ Invalid notification type: ${notificationType}`);
-      return res.status(400).json({ error: 'Invalid notification type' });
-    }
-    
-    // Update the notification setting
-    gameSettings.notifications[notificationType] = enabled;
-    
-    console.log(`🔔 Settings after update:`, gameSettings.notifications);
-    
-    // Save to database
-    await saveNotificationSettings();
-    
-    console.log(`🔔 Notification setting updated: ${notificationType} = ${enabled}`);
-    
-    // Emit socket update
-    io.emit('notification-settings-update', gameSettings.notifications);
-    
-    res.json({
-      success: true,
-      message: `Notification setting updated: ${notificationType} = ${enabled}`,
-      notifications: gameSettings.notifications
-    });
-  } catch (error) {
-    console.error('Error updating notification settings:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
