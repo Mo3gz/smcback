@@ -4093,6 +4093,10 @@ app.get("/api/user", authenticateToken, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
+    
+    // Calculate current mining rate
+    const miningRate = await calculateUserMiningRate(req.user.id);
+    
     res.json({
       id: user.id || user._id,
       username: user.username,
@@ -4100,6 +4104,7 @@ app.get("/api/user", authenticateToken, async (req, res) => {
       teamName: user.teamName,
       coins: user.coins,
       score: user.score,
+      miningRate: miningRate,
       totalMined: user.totalMined || 0,
       lastMined: user.lastMined,
       teamSettings: user.teamSettings || {
@@ -5981,6 +5986,32 @@ async function getUserMiningInfo(userId) {
   }
 }
 
+// Helper function to get card collection progress
+async function getCardCollectionProgress(userId, spinType) {
+  try {
+    const user = await findUserById(userId);
+    if (!user) return null;
+    
+    const receivedCards = user.teamSettings?.receivedCards || {};
+    const receivedCardsForType = receivedCards[spinType] || [];
+    
+    // Get total cards for this spin type from the actual card definitions
+    const cardsByType = getCardsByType(spinType);
+    const totalCards = cardsByType.length;
+    const collectedCards = receivedCardsForType.length;
+    
+    return {
+      collected: collectedCards,
+      total: totalCards,
+      remaining: totalCards - collectedCards,
+      percentage: totalCards > 0 ? Math.round((collectedCards / totalCards) * 100) : 0
+    };
+  } catch (error) {
+    console.error('Error getting card collection progress:', error);
+    return null;
+  }
+}
+
 // Mining system endpoints
 app.get('/api/mining/info', authenticateToken, async (req, res) => {
   try {
@@ -5991,6 +6022,118 @@ app.get('/api/mining/info', authenticateToken, async (req, res) => {
     res.json(miningInfo);
   } catch (error) {
     console.error('Get mining info error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Card collection progress endpoint
+app.get('/api/cards/progress/:spinType', authenticateToken, async (req, res) => {
+  try {
+    const { spinType } = req.params;
+    const progress = await getCardCollectionProgress(req.user.id, spinType);
+    if (!progress) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(progress);
+  } catch (error) {
+    console.error('Get card progress error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Active content set management endpoints
+app.get('/api/admin/active-content', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    const user = await findUserById(req.user.id);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    res.json({ activeContentSet });
+  } catch (error) {
+    console.error('Get active content error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/admin/active-content', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    const user = await findUserById(req.user.id);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { contentSet } = req.body;
+    
+    if (!contentSet || typeof contentSet !== 'string') {
+      return res.status(400).json({ error: 'Valid content set name is required' });
+    }
+
+    // Update active content set
+    activeContentSet = contentSet;
+    
+    // Save to database
+    await db.collection('gameSettings').replaceOne(
+      { type: 'activeContentSet' },
+      { type: 'activeContentSet', activeContentSet: contentSet, updatedAt: new Date() },
+      { upsert: true }
+    );
+
+    // Emit socket event to all users
+    if (io) {
+      io.emit('active-content-update', { activeContentSet: contentSet });
+      console.log('📡 Active content set updated via socket:', contentSet);
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Active content set changed to: ${contentSet}`,
+      activeContentSet: contentSet 
+    });
+  } catch (error) {
+    console.error('Update active content error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get available content sets
+app.get('/api/admin/content-sets', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    const user = await findUserById(req.user.id);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Define available content sets
+    const availableContentSets = [
+      { id: 'default', name: 'Default Content Set', description: 'Standard game content' },
+      { id: 'special', name: 'Special Event Set', description: 'Special event content' },
+      { id: 'tournament', name: 'Tournament Set', description: 'Tournament-specific content' },
+      { id: 'seasonal', name: 'Seasonal Set', description: 'Seasonal event content' },
+      { id: 'custom', name: 'Custom Set', description: 'Custom content configuration' }
+    ];
+
+    res.json({ 
+      availableContentSets,
+      currentActiveSet: activeContentSet || 'default'
+    });
+  } catch (error) {
+    console.error('Get content sets error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get current active content set (for all users)
+app.get('/api/active-content', authenticateToken, async (req, res) => {
+  try {
+    res.json({ 
+      activeContentSet: activeContentSet || 'default'
+    });
+  } catch (error) {
+    console.error('Get active content error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
