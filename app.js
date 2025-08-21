@@ -6624,11 +6624,14 @@ app.get('/api/game-schedule', async (req, res) => {
     }
     
     // Default to team1 if no team specified
-    const selectedTeam = team && teamGameSchedules[team] ? team : 'team1';
+    const selectedTeam = team || 'team1';
     
-    const schedule = teamGameSchedules[selectedTeam] && 
-                    teamGameSchedules[selectedTeam][activeContentSet] && 
-                    teamGameSchedules[selectedTeam][activeContentSet].length > 0 
+    // Check if we have custom schedules for this team, otherwise use defaults
+    const hasCustomSchedules = teamGameSchedules[selectedTeam] && 
+                              teamGameSchedules[selectedTeam][activeContentSet] && 
+                              teamGameSchedules[selectedTeam][activeContentSet].length > 0;
+    
+    const schedule = hasCustomSchedules 
       ? teamGameSchedules[selectedTeam][activeContentSet] 
       : defaultTeamGameSchedules[selectedTeam][activeContentSet];
     
@@ -6811,13 +6814,16 @@ app.get('/api/admin/game-settings', authenticateToken, requireAdmin, async (req,
     console.log('📊 Default teamGameSchedules:', JSON.stringify(defaultTeamGameSchedules, null, 2));
     
     // Check if teamGameSchedules has any data
-    const hasTeamData = Object.keys(teamGameSchedules).some(team => 
-      Object.keys(teamGameSchedules[team]).some(set => 
-        teamGameSchedules[team][set] && teamGameSchedules[team][set].length > 0
-      )
-    );
+    const hasTeamData = Object.keys(teamGameSchedules).length > 0 && 
+      Object.keys(teamGameSchedules).some(team => 
+        teamGameSchedules[team] && 
+        Object.keys(teamGameSchedules[team]).some(set => 
+          teamGameSchedules[team][set] && teamGameSchedules[team][set].length > 0
+        )
+      );
     
     console.log('🔍 Has team data:', hasTeamData);
+    console.log('🔍 teamGameSchedules keys:', Object.keys(teamGameSchedules));
     
     const responseData = {
       teamGameSchedules: hasTeamData ? teamGameSchedules : defaultTeamGameSchedules,
@@ -6833,6 +6839,38 @@ app.get('/api/admin/game-settings', authenticateToken, requireAdmin, async (req,
     res.json(responseData);
   } catch (error) {
     console.error('Error fetching game settings:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get default schedules
+app.get('/api/admin/default-schedules', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('📋 Admin fetching default schedules');
+    res.json({ schedules: defaultTeamGameSchedules });
+  } catch (error) {
+    console.error('Error fetching default schedules:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get specific team schedules
+app.get('/api/admin/team-schedules/:teamId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    console.log('📋 Admin fetching schedules for team:', teamId);
+    
+    // Check if we have custom schedules for this team, otherwise use defaults
+    const hasCustomSchedules = teamGameSchedules[teamId] && 
+                              Object.keys(teamGameSchedules[teamId]).some(set => 
+                                teamGameSchedules[teamId][set] && teamGameSchedules[teamId][set].length > 0
+                              );
+    
+    const schedules = hasCustomSchedules ? teamGameSchedules[teamId] : defaultTeamGameSchedules[teamId];
+    
+    res.json({ schedules });
+  } catch (error) {
+    console.error('Error fetching team schedules:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -6856,32 +6894,7 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 // Game Schedule System - Now supports team-specific data
-let teamGameSchedules = {
-  team1: {
-    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
-  },
-  team2: {
-    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
-  },
-  team3: {
-    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
-  },
-  team4: {
-    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
-  },
-  team5: {
-    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
-  },
-  team6: {
-    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
-  },
-  team7: {
-    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
-  },
-  team8: {
-    contentSet1: [], contentSet2: [], contentSet3: [], contentSet4: []
-  }
-};
+let teamGameSchedules = {};
 let activeContentSet = 'contentSet1'; // Admin can change this
 let gameScheduleVisible = true; // Admin can hide/show game schedule
 let visibleSets = ['contentSet1', 'contentSet2', 'contentSet3', 'contentSet4']; // Which sets are visible
