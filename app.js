@@ -5665,8 +5665,17 @@ app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAd
       return res.status(400).json({ error: 'Invalid visibility status' });
     }
     
+    // Save to separate collection instead of gameSettings
+    if (mongoConnected && db) {
+      await db.collection('gameSettings').updateOne(
+        { type: 'fiftyCoinsCountriesHidden' },
+        { $set: { hidden, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    
+    // Update in-memory variable for backward compatibility
     gameSettings.fiftyCoinsCountriesHidden = hidden;
-    await saveGameSettings(); // Save to database
     
     // Emit to all clients about 50 coins countries visibility change
     io.emit('fifty-coins-countries-visibility-update', { hidden });
@@ -5679,11 +5688,30 @@ app.post('/api/admin/countries/toggle-fifty-coins', authenticateToken, requireAd
     
     res.json({ 
       success: true, 
-      hidden: gameSettings.fiftyCoinsCountriesHidden,
+      hidden: hidden,
       message: `50 coins countries are now ${hidden ? 'hidden' : 'visible'}`
     });
   } catch (error) {
     console.error('Toggle 50 coins countries visibility error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get 50 coins countries visibility status
+app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    let hidden = false; // Default value
+    
+    if (mongoConnected && db) {
+      const result = await db.collection('gameSettings').findOne({ type: 'fiftyCoinsCountriesHidden' });
+      if (result) {
+        hidden = result.hidden;
+      }
+    }
+    
+    res.json({ hidden });
+  } catch (error) {
+    console.error('Get 50 coins countries visibility status error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
