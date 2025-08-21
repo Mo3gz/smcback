@@ -899,6 +899,46 @@ app.get('/api/debug/auth-state', (req, res) => {
   });
 });
 
+// Debug endpoint to test authentication step by step
+app.get('/api/debug/auth-step-test', async (req, res) => {
+  try {
+    console.log('🔍 === AUTH STEP TEST START ===');
+    console.log('🔍 Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('🔍 Cookies:', JSON.stringify(req.cookies, null, 2));
+    
+    // Test token extraction
+    const authHeader = req.headers.authorization;
+    const xAuthToken = req.headers['x-auth-token'];
+    const cookieToken = req.cookies.token;
+    const username = req.headers['x-username'];
+    
+    console.log('🔍 Token sources:');
+    console.log('🔍   - Authorization header:', authHeader ? 'present' : 'missing');
+    console.log('🔍   - x-auth-token header:', xAuthToken ? 'present' : 'missing');
+    console.log('🔍   - Cookie token:', cookieToken ? 'present' : 'missing');
+    console.log('🔍   - x-username header:', username ? username : 'missing');
+    
+    res.json({
+      message: 'Auth step test completed',
+      tokenSources: {
+        authorizationHeader: !!authHeader,
+        xAuthToken: !!xAuthToken,
+        cookieToken: !!cookieToken,
+        username: username
+      },
+      headers: {
+        authorization: authHeader,
+        'x-auth-token': xAuthToken,
+        'x-username': username
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Auth step test error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Safari-specific debug endpoint
 app.get('/api/debug/safari-auth', async (req, res) => {
   console.log('🦁 Safari auth debug check');
@@ -1347,22 +1387,10 @@ app.get('/api/debug/card-collection', authenticateToken, async (req, res) => {
 });
 
 // Admin endpoint to reset card collection for a user
-app.post('/api/admin/reset-card-collection', authenticateToken, async (req, res) => {
+app.post('/api/admin/reset-card-collection', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('🔄 === ADMIN RESET CARD COLLECTION START ===');
     console.log('🔄 Admin request from:', JSON.stringify(req.user, null, 2));
-    
-    // Check if user is admin
-    const username = req.user.username;
-    const userRole = req.user.role;
-    const isAdmin = username === 'ayman' || username === 'admin' || username === 'Admin' ||
-                   userRole === 'admin' || userRole === 'ADMIN' || userRole === 'Admin' ||
-                   userRole === 'administrator' || userRole === 'Administrator';
-    
-    if (!isAdmin) {
-      console.log('❌ Non-admin user attempted to reset card collection');
-      return res.status(403).json({ error: 'Admin access required' });
-    }
     
     const { userId, spinType } = req.body;
     
@@ -6145,7 +6173,7 @@ app.get('/api/game-schedule', async (req, res) => {
 
 
 // Admin: Update game schedules
-app.post('/api/admin/team-game-schedules', requireAdmin, async (req, res) => {
+app.post('/api/admin/team-game-schedules', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('📅 Admin updating team game schedules:', req.body);
     const { schedules } = req.body;
@@ -6173,7 +6201,7 @@ app.post('/api/admin/team-game-schedules', requireAdmin, async (req, res) => {
 });
 
 // Admin: Update visible sets
-app.post('/api/admin/visible-sets', requireAdmin, async (req, res) => {
+app.post('/api/admin/visible-sets', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('👁️ Admin updating visible sets:', req.body);
     const { sets } = req.body;
@@ -6201,7 +6229,7 @@ app.post('/api/admin/visible-sets', requireAdmin, async (req, res) => {
 });
 
 // Admin: Set active content set
-app.post('/api/admin/active-content-set', requireAdmin, async (req, res) => {
+app.post('/api/admin/active-content-set', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('🎯 Admin setting active content set:', req.body);
     const { contentSet } = req.body;
@@ -6231,7 +6259,7 @@ app.post('/api/admin/active-content-set', requireAdmin, async (req, res) => {
 });
 
 // Admin: Set game schedule visibility
-app.post('/api/admin/game-schedule-visibility', requireAdmin, async (req, res) => {
+app.post('/api/admin/game-schedule-visibility', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('👁️ Admin setting game schedule visibility:', req.body);
     const { visible } = req.body;
@@ -6259,7 +6287,7 @@ app.post('/api/admin/game-schedule-visibility', requireAdmin, async (req, res) =
 });
 
 // Admin: Get all game settings
-app.get('/api/admin/game-settings', requireAdmin, async (req, res) => {
+app.get('/api/admin/game-settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
     console.log('⚙️ Admin fetching all game settings');
     console.log('📊 Current teamGameSchedules:', JSON.stringify(teamGameSchedules, null, 2));
