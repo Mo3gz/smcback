@@ -2288,22 +2288,7 @@ app.post('/api/auth/refresh', async (req, res) => {
 
 app.get('/api/scoreboard', async (req, res) => {
   try {
-    const users = await getAllUsers();
-          const scoreboard = users
-        .filter(user => user.role === 'user')
-        .filter(user => {
-          // Check if team has scoreboard visibility disabled
-          const teamSettings = user.teamSettings || {};
-          return teamSettings.scoreboardVisible !== false;
-        })
-        .map(user => ({
-        id: user.id || user._id,
-        teamName: user.teamName,
-        score: user.score,
-        coins: user.coins
-      }))
-      .sort((a, b) => b.score - a.score);
-    
+    const scoreboard = await getFilteredScoreboardData();
     res.json(scoreboard);
   } catch (error) {
     console.error('Get scoreboard error:', error);
@@ -6140,6 +6125,9 @@ app.post('/api/admin/users/:userId/coins', authenticateToken, requireAdmin, asyn
       return res.status(404).json({ error: 'User not found' });
     }
     
+    // Get admin user info for notification
+    const adminUser = await findUserById(req.user.id);
+    
     let newCoins;
     switch (operation) {
       case 'set':
@@ -6157,7 +6145,30 @@ app.post('/api/admin/users/:userId/coins', authenticateToken, requireAdmin, asyn
     
     console.log(`User "${user.teamName}" coins adjusted by admin: ${operation} ${coins} = ${newCoins}`);
     
-    // Emit user update
+    // Create admin action notification (only for admins)
+    const adminAction = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'admin-action',
+      actionType: 'kaizen-updated',
+      message: `Admin ${adminUser.teamName} ${operation}ed ${coins} kaizen for team ${user.teamName}. New balance: ${newCoins} kaizen.`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        targetTeamId: userId,
+        targetTeamName: user.teamName,
+        operation: operation,
+        amount: coins,
+        oldBalance: user.coins,
+        newBalance: newCoins
+      }
+    };
+    
+    // Send admin notification only to admins (not all teams)
+    await sendAdminNotificationToAdmins(adminAction);
+    
+    // Emit user update only to the specific user
     io.to(userId).emit('user-update', {
       id: userId,
       teamName: user.teamName,
@@ -6165,9 +6176,11 @@ app.post('/api/admin/users/:userId/coins', authenticateToken, requireAdmin, asyn
       score: user.score
     });
     
-    // Update scoreboard
-    const updatedUsers = await getAllUsers();
-    io.emit('scoreboard-update', updatedUsers);
+    // Update scoreboard for all users (if scoreboard is not hidden)
+    const scoreboardUsers = await getFilteredScoreboardData();
+    
+    // Send scoreboard update to all users
+    io.emit('scoreboard-update', scoreboardUsers);
     
     res.json({ 
       success: true, 
@@ -6202,6 +6215,9 @@ app.post('/api/admin/users/:userId/score', authenticateToken, requireAdmin, asyn
       return res.status(404).json({ error: 'User not found' });
     }
     
+    // Get admin user info for notification
+    const adminUser = await findUserById(req.user.id);
+    
     let newScore;
     switch (operation) {
       case 'set':
@@ -6219,7 +6235,30 @@ app.post('/api/admin/users/:userId/score', authenticateToken, requireAdmin, asyn
     
     console.log(`User "${user.teamName}" score adjusted by admin: ${operation} ${score} = ${newScore}`);
     
-    // Emit user update
+    // Create admin action notification (only for admins)
+    const adminAction = {
+      id: Date.now().toString(),
+      userId: req.user.id,
+      type: 'admin-action',
+      actionType: 'score-updated',
+      message: `Admin ${adminUser.teamName} ${operation}ed ${score} score for team ${user.teamName}. New score: ${newScore}.`,
+      timestamp: new Date().toISOString(),
+      read: false,
+      recipientType: 'admin',
+      metadata: {
+        targetTeamId: userId,
+        targetTeamName: user.teamName,
+        operation: operation,
+        amount: score,
+        oldScore: user.score,
+        newScore: newScore
+      }
+    };
+    
+    // Send admin notification only to admins (not all teams)
+    await sendAdminNotificationToAdmins(adminAction);
+    
+    // Emit user update only to the specific user
     io.to(userId).emit('user-update', {
       id: userId,
       teamName: user.teamName,
@@ -6227,9 +6266,11 @@ app.post('/api/admin/users/:userId/score', authenticateToken, requireAdmin, asyn
       score: newScore
     });
     
-    // Update scoreboard
-    const updatedUsers = await getAllUsers();
-    io.emit('scoreboard-update', updatedUsers);
+    // Update scoreboard for all users (if scoreboard is not hidden)
+    const scoreboardUsers = await getFilteredScoreboardData();
+    
+    // Send scoreboard update to all users
+    io.emit('scoreboard-update', scoreboardUsers);
     
     res.json({ 
       success: true, 
@@ -6341,6 +6382,53 @@ async function calculateUserMiningRate(userId) {
 }
 
 
+
+// Helper function to send admin notifications only to admin users
+async function sendAdminNotificationToAdmins(notification) {
+  try {
+    // Save notification to database
+    await addNotification(notification);
+    
+    // Get all admin users
+    const adminUsers = await getAllUsers().then(users => users.filter(u => u.role === 'admin'));
+    
+    // Send notification only to admin users
+    adminUsers.forEach(admin => {
+      io.to(admin.id).emit('admin-notification', notification);
+    });
+    
+    console.log(`🔔 Admin notification sent to ${adminUsers.length} admin users:`, notification.actionType || notification.type);
+  } catch (error) {
+    console.error('Error sending admin notification to admins:', error);
+  }
+}
+
+// Helper function to get filtered scoreboard data
+async function getFilteredScoreboardData() {
+  try {
+    const users = await getAllUsers();
+    
+    // Filter users for scoreboard based on visibility settings
+    const scoreboardUsers = users
+      .filter(user => user.role === 'user')
+      .filter(user => {
+        const teamSettings = user.teamSettings || {};
+        return teamSettings.scoreboardVisible !== false;
+      })
+      .map(user => ({
+        id: user.id || user._id,
+        teamName: user.teamName,
+        score: user.score,
+        coins: user.coins
+      }))
+      .sort((a, b) => b.score - a.score);
+    
+    return scoreboardUsers;
+  } catch (error) {
+    console.error('Error getting filtered scoreboard data:', error);
+    return [];
+  }
+}
 
 // Helper function to get user's mining info
 async function getUserMiningInfo(userId) {
