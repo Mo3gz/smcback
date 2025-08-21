@@ -322,9 +322,18 @@ async function getAllUsers() {
 
 // Helper functions for countries (MongoDB or fallback)
 async function getAllCountries() {
-  if (mongoConnected && db) {
-    return await db.collection('countries').find({}).toArray();
-  } else {
+  try {
+    if (mongoConnected && db) {
+      const countriesFromDB = await db.collection('countries').find({}).toArray();
+      console.log(`📊 getAllCountries: Found ${countriesFromDB.length} countries from MongoDB`);
+      return countriesFromDB;
+    } else {
+      console.log(`📊 getAllCountries: Using fallback countries array with ${countries.length} countries`);
+      return countries;
+    }
+  } catch (error) {
+    console.error('❌ Error in getAllCountries:', error);
+    console.log(`📊 getAllCountries: Falling back to countries array with ${countries.length} countries`);
     return countries;
   }
 }
@@ -6301,9 +6310,16 @@ app.post('/api/speedbuy/check', authenticateToken, async (req, res) => {
 // Helper function to calculate user's mining rate
 async function calculateUserMiningRate(userId) {
   try {
+    console.log(`🔍 Calculating mining rate for user ${userId}...`);
     const countries = await getAllCountries();
+    console.log(`📊 Total countries found: ${countries.length}`);
+    
     const ownedCountries = countries.filter(country => country.owner === userId);
+    console.log(`🏠 Owned countries for user ${userId}:`, ownedCountries.map(c => ({ id: c.id, name: c.name, miningRate: c.miningRate })));
+    
     const totalMiningRate = ownedCountries.reduce((sum, country) => sum + (country.miningRate || 0), 0);
+    console.log(`⛏️ Total mining rate for user ${userId}: ${totalMiningRate}`);
+    
     return totalMiningRate;
   } catch (error) {
     console.error('Error calculating mining rate:', error);
@@ -6316,15 +6332,21 @@ async function calculateUserMiningRate(userId) {
 // Helper function to get user's mining info
 async function getUserMiningInfo(userId) {
   try {
+    console.log(`🔍 Getting mining info for user ${userId}...`);
     const user = await findUserById(userId);
-    if (!user) return null;
+    if (!user) {
+      console.log(`❌ User ${userId} not found`);
+      return null;
+    }
+    
+    console.log(`✅ User ${userId} found:`, { teamName: user.teamName, role: user.role });
     
     const miningRate = await calculateUserMiningRate(userId);
     const ownedCountries = await getAllCountries().then(countries => 
       countries.filter(country => country.owner === userId)
     );
     
-    return {
+    const result = {
       userId,
       miningRate,
       totalMined: user.totalMined || 0,
@@ -6335,6 +6357,9 @@ async function getUserMiningInfo(userId) {
         miningRate: country.miningRate || 0
       }))
     };
+    
+    console.log(`📊 Final mining info for user ${userId}:`, result);
+    return result;
   } catch (error) {
     console.error('Error getting user mining info:', error);
     return 0;
@@ -6370,13 +6395,78 @@ async function getCardCollectionProgress(userId, spinType) {
 // Mining system endpoints
 app.get('/api/mining/info', authenticateToken, async (req, res) => {
   try {
+    console.log(`🔍 Mining info request for user ${req.user.id} (${req.user.teamName})`);
     const miningInfo = await getUserMiningInfo(req.user.id);
+    console.log(`📊 Mining info result:`, miningInfo);
+    
     if (!miningInfo) {
+      console.log(`❌ User ${req.user.id} not found for mining info`);
       return res.status(404).json({ error: 'User not found' });
     }
+    
+    console.log(`✅ Sending mining info for user ${req.user.id}:`, miningInfo);
     res.json(miningInfo);
   } catch (error) {
     console.error('Get mining info error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Debug endpoint to check mining rate calculation
+app.get('/api/debug/mining-rate/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log(`🔍 Debug mining rate calculation for user ${userId}`);
+    
+    const countries = await getAllCountries();
+    console.log(`📊 Total countries: ${countries.length}`);
+    
+    const ownedCountries = countries.filter(country => country.owner === userId);
+    console.log(`🏠 Owned countries:`, ownedCountries.map(c => ({ id: c.id, name: c.name, miningRate: c.miningRate, owner: c.owner })));
+    
+    const totalMiningRate = ownedCountries.reduce((sum, country) => sum + (country.miningRate || 0), 0);
+    console.log(`⛏️ Total mining rate: ${totalMiningRate}`);
+    
+    res.json({
+      userId,
+      totalCountries: countries.length,
+      ownedCountries: ownedCountries.length,
+      ownedCountriesDetails: ownedCountries,
+      totalMiningRate
+    });
+  } catch (error) {
+    console.error('Debug mining rate error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Test endpoint to assign a country to a user for testing mining rate
+app.post('/api/debug/assign-country', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId, countryId } = req.body;
+    console.log(`🔍 Assigning country ${countryId} to user ${userId} for testing`);
+    
+    const country = await findCountryById(countryId);
+    if (!country) {
+      return res.status(404).json({ error: 'Country not found' });
+    }
+    
+    // Assign the country to the user
+    await updateCountryById(countryId, { owner: userId });
+    
+    // Recalculate mining rate for the user
+    const newMiningRate = await calculateUserMiningRate(userId);
+    await updateUserById(userId, { miningRate: newMiningRate });
+    
+    console.log(`✅ Country ${countryId} assigned to user ${userId}, new mining rate: ${newMiningRate}`);
+    
+    res.json({
+      success: true,
+      message: `Country ${country.name} assigned to user`,
+      newMiningRate
+    });
+  } catch (error) {
+    console.error('Assign country error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
