@@ -419,6 +419,36 @@ async function removeFromUserInventory(userId, itemId) {
 
 // Helper functions for notifications (MongoDB or fallback)
 async function addNotification(notification) {
+  // Check if this type of notification is enabled (admin controlled)
+  const notificationType = notification.type || 'general';
+  
+  // Map notification types to settings
+  let isEnabled = true;
+  if (gameSettings && gameSettings.notifications) {
+    if (notificationType === 'admin-action' && notification.actionType) {
+      // Check specific admin action types
+      if (notification.actionType.includes('promo-code') && !gameSettings.notifications.promocodes) {
+        isEnabled = false;
+      } else if (notification.actionType.includes('country') && !gameSettings.notifications.countryPurchases) {
+        isEnabled = false;
+      } else if (notification.actionType.includes('spin') && !gameSettings.notifications.spinResults) {
+        isEnabled = false;
+      } else if (!gameSettings.notifications.adminActions) {
+        isEnabled = false;
+      }
+    } else if (notificationType === 'team-update' && !gameSettings.notifications.teamUpdates) {
+      isEnabled = false;
+    } else if (notificationType === 'game-schedule' && !gameSettings.notifications.gameSchedule) {
+      isEnabled = false;
+    }
+  }
+  
+  // If notification is disabled, don't add it
+  if (!isEnabled) {
+    console.log(`🔕 Notification disabled for type: ${notificationType}`, notification.actionType || '');
+    return;
+  }
+  
   // Ensure notification has default read status and approval status
   const notificationWithDefaults = {
     ...notification,
@@ -433,6 +463,8 @@ async function addNotification(notification) {
   } else {
     notifications.push(notificationWithDefaults);
   }
+  
+  console.log(`🔔 Notification added (enabled): ${notificationType}`, notification.actionType || '');
 }
 
 async function getAllNotifications() {
@@ -4532,7 +4564,17 @@ let gameSettings = {
   11: { enabled: true, name: 'Game 11' },
   12: { enabled: true, name: 'Game 12' },
   // Global settings
-  fiftyCoinsCountriesHidden: false // Global setting for 50 coins countries visibility
+  fiftyCoinsCountriesHidden: false, // Global setting for 50 coins countries visibility
+  
+  // Notification settings - admin controlled only
+  notifications: {
+    promocodes: true,        // Promocode operations
+    countryPurchases: true,  // Country buying/selling
+    spinResults: true,       // Spin game results
+    adminActions: true,      // Admin operations
+    teamUpdates: true,       // Team changes
+    gameSchedule: true       // Game schedule changes
+  }
 };
 
 // Load game settings from database
@@ -4563,6 +4605,29 @@ async function loadGameSettings() {
           { upsert: true }
         );
         console.log('✅ Initialized default fifty coins countries hidden status');
+      }
+      
+      // Load notification settings from separate collection
+      const notificationDoc = await db.collection('gameSettings').findOne({ type: 'notificationSettings' });
+      if (notificationDoc && notificationDoc.settings) {
+        gameSettings.notifications = { ...gameSettings.notifications, ...notificationDoc.settings };
+        console.log('✅ Notification settings loaded from database:', notificationDoc.settings);
+      } else {
+        // Initialize default notification settings if not found
+        const defaultNotifications = {
+          promocodes: true,
+          countryPurchases: true,
+          spinResults: true,
+          adminActions: true,
+          teamUpdates: true,
+          gameSchedule: true
+        };
+        await db.collection('gameSettings').updateOne(
+          { type: 'notificationSettings' },
+          { $set: { settings: defaultNotifications, updatedAt: new Date() } },
+          { upsert: true }
+        );
+        console.log('✅ Initialized default notification settings');
       }
       
       // Validate the loaded settings
@@ -4597,6 +4662,22 @@ async function saveGameSettings() {
     console.log('✅ Game settings saved to database');
   } catch (error) {
     console.error('❌ Error saving game settings:', error);
+  }
+}
+
+// Save notification settings to database
+async function saveNotificationSettings() {
+  if (!mongoConnected || !db) return;
+
+  try {
+    await db.collection('gameSettings').updateOne(
+      { type: 'notificationSettings' },
+      { $set: { settings: gameSettings.notifications, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    console.log('✅ Notification settings saved to database');
+  } catch (error) {
+    console.error('❌ Error saving notification settings:', error);
   }
 }
 
@@ -5845,6 +5926,50 @@ app.get('/api/admin/countries/fifty-coins-status', authenticateToken, requireAdm
     res.json({ hidden });
   } catch (error) {
     console.error('Get 50 coins countries visibility status error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin get notification settings
+app.get('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      notifications: gameSettings.notifications
+    });
+  } catch (error) {
+    console.error('Error getting notification settings:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin update notification settings
+app.post('/api/admin/notification-settings', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { notificationType, enabled } = req.body;
+    
+    if (!gameSettings.notifications.hasOwnProperty(notificationType)) {
+      return res.status(400).json({ error: 'Invalid notification type' });
+    }
+    
+    // Update the notification setting
+    gameSettings.notifications[notificationType] = enabled;
+    
+    // Save to database
+    await saveNotificationSettings();
+    
+    console.log(`🔔 Notification setting updated: ${notificationType} = ${enabled}`);
+    
+    // Emit socket update
+    io.emit('notification-settings-update', gameSettings.notifications);
+    
+    res.json({
+      success: true,
+      message: `Notification setting updated: ${notificationType} = ${enabled}`,
+      notifications: gameSettings.notifications
+    });
+  } catch (error) {
+    console.error('Error updating notification settings:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
