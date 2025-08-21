@@ -6176,33 +6176,6 @@ app.post('/api/admin/users/:userId/coins', authenticateToken, requireAdmin, asyn
     
     console.log(`User "${user.teamName}" coins adjusted by admin: ${operation} ${coins} = ${newCoins}`);
     
-    // Create admin notification for coin adjustment
-    const adminAction = {
-      id: Date.now().toString(),
-      userId: null, // Admin notification
-      type: 'admin-action',
-      actionType: 'coins-adjusted',
-      message: `Admin ${operation}ed ${coins} kaizen to team ${user.teamName}`,
-      timestamp: new Date().toISOString(),
-      read: false,
-      recipientType: 'admin',
-      metadata: {
-        teamId: userId,
-        targetTeamName: user.teamName,
-        operation: operation,
-        coinsAdded: operation === 'add' ? coins : 0,
-        coinsSubtracted: operation === 'subtract' ? coins : 0,
-        coinsSet: operation === 'set' ? coins : 0,
-        previousBalance: user.coins,
-        newBalance: newCoins,
-        adminUsername: req.user.username || req.user.teamName || 'Admin'
-      }
-    };
-    
-    await addNotification(adminAction);
-    // Emit to all admin clients
-    io.emit('admin-notification', adminAction);
-    
     // Emit user update
     io.to(userId).emit('user-update', {
       id: userId,
@@ -6264,33 +6237,6 @@ app.post('/api/admin/users/:userId/score', authenticateToken, requireAdmin, asyn
     await updateUserById(userId, { score: newScore });
     
     console.log(`User "${user.teamName}" score adjusted by admin: ${operation} ${score} = ${newScore}`);
-    
-    // Create admin notification for score adjustment
-    const adminAction = {
-      id: Date.now().toString(),
-      userId: null, // Admin notification
-      type: 'admin-action',
-      actionType: 'score-adjusted',
-      message: `Admin ${operation}ed ${score} points to team ${user.teamName}`,
-      timestamp: new Date().toISOString(),
-      read: false,
-      recipientType: 'admin',
-      metadata: {
-        teamId: userId,
-        targetTeamName: user.teamName,
-        operation: operation,
-        pointsAdded: operation === 'add' ? score : 0,
-        pointsSubtracted: operation === 'subtract' ? score : 0,
-        pointsSet: operation === 'set' ? score : 0,
-        previousScore: user.score,
-        newScore: newScore,
-        adminUsername: req.user.username || req.user.teamName || 'Admin'
-      }
-    };
-    
-    await addNotification(adminAction);
-    // Emit to all admin clients
-    io.emit('admin-notification', adminAction);
     
     // Emit user update
     io.to(userId).emit('user-update', {
