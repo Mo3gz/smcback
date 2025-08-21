@@ -4432,11 +4432,20 @@ async function loadGameSettings() {
       gameSettings = settings.games;
       console.log('✅ Game settings loaded from database:', gameSettings);
       
-      // Ensure fiftyCoinsCountriesHidden setting exists
-      if (typeof gameSettings.fiftyCoinsCountriesHidden === 'undefined') {
+      // Load fifty coins countries hidden status from separate collection
+      const fiftyCoinsDoc = await db.collection('gameSettings').findOne({ type: 'fiftyCoinsCountriesHidden' });
+      if (fiftyCoinsDoc && typeof fiftyCoinsDoc.hidden === 'boolean') {
+        gameSettings.fiftyCoinsCountriesHidden = fiftyCoinsDoc.hidden;
+        console.log('✅ Fifty coins countries hidden status loaded from database:', fiftyCoinsDoc.hidden);
+      } else {
+        // Initialize default value if not found
         gameSettings.fiftyCoinsCountriesHidden = false;
-        await saveGameSettings();
-        console.log('✅ Added missing fiftyCoinsCountriesHidden setting');
+        await db.collection('gameSettings').updateOne(
+          { type: 'fiftyCoinsCountriesHidden' },
+          { $set: { hidden: false, updatedAt: new Date() } },
+          { upsert: true }
+        );
+        console.log('✅ Initialized default fifty coins countries hidden status');
       }
       
       // Validate the loaded settings
