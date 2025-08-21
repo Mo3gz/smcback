@@ -234,19 +234,6 @@ async function initializeDefaultData() {
     if (countryCount === 0) {
       await db.collection('countries').insertMany(countries);
       console.log('✅ Default countries initialized in MongoDB');
-    } else {
-      console.log(`📊 Countries collection already has ${countryCount} documents`);
-      
-      // Verify that countries have the correct structure
-      const sampleCountry = await db.collection('countries').findOne({});
-      if (sampleCountry) {
-        console.log('📊 Sample country structure:', {
-          id: sampleCountry.id,
-          name: sampleCountry.name,
-          hasOwner: 'owner' in sampleCountry,
-          hasMiningRate: 'miningRate' in sampleCountry
-        });
-      }
     }
 
     // Create indexes for better performance
@@ -335,18 +322,9 @@ async function getAllUsers() {
 
 // Helper functions for countries (MongoDB or fallback)
 async function getAllCountries() {
-  try {
-    if (mongoConnected && db) {
-      const countriesFromDB = await db.collection('countries').find({}).toArray();
-      console.log(`📊 getAllCountries: Found ${countriesFromDB.length} countries from MongoDB`);
-      return countriesFromDB;
-    } else {
-      console.log(`📊 getAllCountries: Using fallback countries array with ${countries.length} countries`);
-      return countries;
-    }
-  } catch (error) {
-    console.error('❌ Error in getAllCountries:', error);
-    console.log(`📊 getAllCountries: Falling back to countries array with ${countries.length} countries`);
+  if (mongoConnected && db) {
+    return await db.collection('countries').find({}).toArray();
+  } else {
     return countries;
   }
 }
@@ -2288,7 +2266,22 @@ app.post('/api/auth/refresh', async (req, res) => {
 
 app.get('/api/scoreboard', async (req, res) => {
   try {
-    const scoreboard = await getFilteredScoreboardData();
+    const users = await getAllUsers();
+          const scoreboard = users
+        .filter(user => user.role === 'user')
+        .filter(user => {
+          // Check if team has scoreboard visibility disabled
+          const teamSettings = user.teamSettings || {};
+          return teamSettings.scoreboardVisible !== false;
+        })
+        .map(user => ({
+        id: user.id || user._id,
+        teamName: user.teamName,
+        score: user.score,
+        coins: user.coins
+      }))
+      .sort((a, b) => b.score - a.score);
+    
     res.json(scoreboard);
   } catch (error) {
     console.error('Get scoreboard error:', error);
@@ -6125,9 +6118,6 @@ app.post('/api/admin/users/:userId/coins', authenticateToken, requireAdmin, asyn
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Get admin user info for notification
-    const adminUser = await findUserById(req.user.id);
-    
     let newCoins;
     switch (operation) {
       case 'set':
@@ -6145,50 +6135,17 @@ app.post('/api/admin/users/:userId/coins', authenticateToken, requireAdmin, asyn
     
     console.log(`User "${user.teamName}" coins adjusted by admin: ${operation} ${coins} = ${newCoins}`);
     
-    // Create admin action notification (only for admins)
-    const adminAction = {
-      id: Date.now().toString(),
-      userId: req.user.id,
-      type: 'admin-action',
-      actionType: 'kaizen-updated',
-      message: `Admin ${adminUser.teamName} ${operation}ed ${coins} kaizen for team ${user.teamName}. New balance: ${newCoins} kaizen.`,
-      timestamp: new Date().toISOString(),
-      read: false,
-      recipientType: 'admin',
-      metadata: {
-        targetTeamId: userId,
-        targetTeamName: user.teamName,
-        operation: operation,
-        amount: coins,
-        oldBalance: user.coins,
-        newBalance: newCoins
-      }
-    };
-    
-    // Send admin notification only to admins (not all teams)
-    await sendAdminNotificationToAdmins(adminAction);
-    
-    // Emit user update only to the specific user
-    const userUpdateData = {
+    // Emit user update
+    io.to(userId).emit('user-update', {
       id: userId,
       teamName: user.teamName,
       coins: newCoins,
       score: user.score
-    };
-    console.log(`📡 Sending user-update to user ${userId} (${user.teamName}):`, userUpdateData);
+    });
     
-    // Send to user's room
-    io.to(userId).emit('user-update', userUpdateData);
-    
-    // Also send as a general update to ensure delivery
-    io.emit('user-update', userUpdateData);
-    
-    // Update scoreboard for all users (if scoreboard is not hidden)
-    const scoreboardUsers = await getFilteredScoreboardData();
-    
-    // Send scoreboard update to all users
-    console.log(`📊 Sending scoreboard-update to all users with ${scoreboardUsers.length} visible teams`);
-    io.emit('scoreboard-update', scoreboardUsers);
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
     
     res.json({ 
       success: true, 
@@ -6223,9 +6180,6 @@ app.post('/api/admin/users/:userId/score', authenticateToken, requireAdmin, asyn
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Get admin user info for notification
-    const adminUser = await findUserById(req.user.id);
-    
     let newScore;
     switch (operation) {
       case 'set':
@@ -6243,50 +6197,17 @@ app.post('/api/admin/users/:userId/score', authenticateToken, requireAdmin, asyn
     
     console.log(`User "${user.teamName}" score adjusted by admin: ${operation} ${score} = ${newScore}`);
     
-    // Create admin action notification (only for admins)
-    const adminAction = {
-      id: Date.now().toString(),
-      userId: req.user.id,
-      type: 'admin-action',
-      actionType: 'score-updated',
-      message: `Admin ${adminUser.teamName} ${operation}ed ${score} score for team ${user.teamName}. New score: ${newScore}.`,
-      timestamp: new Date().toISOString(),
-      read: false,
-      recipientType: 'admin',
-      metadata: {
-        targetTeamId: userId,
-        targetTeamName: user.teamName,
-        operation: operation,
-        amount: score,
-        oldScore: user.score,
-        newScore: newScore
-      }
-    };
-    
-    // Send admin notification only to admins (not all teams)
-    await sendAdminNotificationToAdmins(adminAction);
-    
-    // Emit user update only to the specific user
-    const userUpdateData = {
+    // Emit user update
+    io.to(userId).emit('user-update', {
       id: userId,
       teamName: user.teamName,
       coins: user.coins,
       score: newScore
-    };
-    console.log(`📡 Sending user-update to user ${userId} (${user.teamName}):`, userUpdateData);
+    });
     
-    // Send to user's room
-    io.to(userId).emit('user-update', userUpdateData);
-    
-    // Also send as a general update to ensure delivery
-    io.emit('user-update', userUpdateData);
-    
-    // Update scoreboard for all users (if scoreboard is not hidden)
-    const scoreboardUsers = await getFilteredScoreboardData();
-    
-    // Send scoreboard update to all users
-    console.log(`📊 Sending scoreboard-update to all users with ${scoreboardUsers.length} visible teams`);
-    io.emit('scoreboard-update', scoreboardUsers);
+    // Update scoreboard
+    const updatedUsers = await getAllUsers();
+    io.emit('scoreboard-update', updatedUsers);
     
     res.json({ 
       success: true, 
@@ -6380,16 +6301,9 @@ app.post('/api/speedbuy/check', authenticateToken, async (req, res) => {
 // Helper function to calculate user's mining rate
 async function calculateUserMiningRate(userId) {
   try {
-    console.log(`🔍 Calculating mining rate for user ${userId}...`);
     const countries = await getAllCountries();
-    console.log(`📊 Total countries found: ${countries.length}`);
-    
     const ownedCountries = countries.filter(country => country.owner === userId);
-    console.log(`🏠 Owned countries for user ${userId}:`, ownedCountries.map(c => ({ id: c.id, name: c.name, miningRate: c.miningRate })));
-    
     const totalMiningRate = ownedCountries.reduce((sum, country) => sum + (country.miningRate || 0), 0);
-    console.log(`⛏️ Total mining rate for user ${userId}: ${totalMiningRate}`);
-    
     return totalMiningRate;
   } catch (error) {
     console.error('Error calculating mining rate:', error);
@@ -6399,111 +6313,16 @@ async function calculateUserMiningRate(userId) {
 
 
 
-// Helper function to send admin notifications only to admin users
-async function sendAdminNotificationToAdmins(notification) {
-  try {
-    // Save notification to database
-    await addNotification(notification);
-    
-    // Get all admin users
-    const adminUsers = await getAllUsers().then(users => users.filter(u => u.role === 'admin'));
-    
-    // Send notification only to admin users
-    adminUsers.forEach(admin => {
-      io.to(admin.id).emit('admin-notification', notification);
-    });
-    
-    console.log(`🔔 Admin notification sent to ${adminUsers.length} admin users:`, notification.actionType || notification.type);
-  } catch (error) {
-    console.error('Error sending admin notification to admins:', error);
-  }
-}
-
-// Helper function to get filtered scoreboard data
-async function getFilteredScoreboardData() {
-  try {
-    const users = await getAllUsers();
-    console.log(`📊 getFilteredScoreboardData: Processing ${users.length} total users`);
-    
-    // Ensure all users have proper team settings
-    for (const user of users) {
-      if (user.role === 'user' && (!user.teamSettings || !user.teamSettings.hasOwnProperty('scoreboardVisible'))) {
-        console.log(`🔧 Fixing team settings for user ${user.teamName} (${user.id})`);
-        
-        const defaultTeamSettings = {
-          scoreboardVisible: true,
-          spinLimitations: {
-            lucky: { enabled: true, limit: 1 },
-            gamehelper: { enabled: true, limit: 1 },
-            challenge: { enabled: true, limit: 1 },
-            hightier: { enabled: true, limit: 1 },
-            lowtier: { enabled: true, limit: 1 },
-            random: { enabled: true, limit: 1 }
-          },
-          spinCounts: { lucky: 0, gamehelper: 0, challenge: 0, hightier: 0, lowtier: 0, random: 0 }
-        };
-        
-        // Update user in database
-        await updateUserById(user.id, { teamSettings: defaultTeamSettings });
-        console.log(`✅ Fixed team settings for user ${user.teamName}`);
-        
-        // Update local user object
-        user.teamSettings = defaultTeamSettings;
-      }
-    }
-    
-    // Filter users for scoreboard based on visibility settings
-    const scoreboardUsers = users
-      .filter(user => user.role === 'user')
-      .filter(user => {
-        // If user has no teamSettings, default to visible
-        if (!user.teamSettings) {
-          console.log(`👁️ Team ${user.teamName}: No teamSettings, defaulting to visible`);
-          return true;
-        }
-        
-        const isVisible = user.teamSettings.scoreboardVisible !== false; // Default to true if not set
-        console.log(`👁️ Team ${user.teamName}: scoreboardVisible = ${user.teamSettings.scoreboardVisible}, isVisible = ${isVisible}`);
-        return isVisible;
-      })
-      .map(user => ({
-        id: user.id || user._id,
-        teamName: user.teamName,
-        score: user.score,
-        coins: user.coins
-      }))
-      .sort((a, b) => b.score - a.score);
-    
-    console.log(`📊 getFilteredScoreboardData: Returning ${scoreboardUsers.length} visible users`);
-    return scoreboardUsers;
-  } catch (error) {
-    console.error('Error getting filtered scoreboard data:', error);
-    return [];
-  }
-}
-
 // Helper function to get user's mining info
 async function getUserMiningInfo(userId) {
   try {
-    console.log(`🔍 Getting mining info for user ${userId}...`);
     const user = await findUserById(userId);
-    if (!user) {
-      console.log(`❌ User ${userId} not found`);
-      return null;
-    }
-    
-    console.log(`✅ User ${userId} found:`, { teamName: user.teamName, role: user.role });
+    if (!user) return null;
     
     const miningRate = await calculateUserMiningRate(userId);
     const ownedCountries = await getAllCountries().then(countries => 
       countries.filter(country => country.owner === userId)
     );
-    
-    console.log(`📊 Final mining info for user ${userId}:`, {
-      miningRate,
-      totalMined: user.totalMined || 0,
-      ownedCountriesCount: ownedCountries.length
-    });
     
     return {
       userId,
