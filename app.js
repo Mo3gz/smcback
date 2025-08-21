@@ -216,6 +216,7 @@ let countries = [
 let userInventories = {};
 let notifications = [];
 let promoCodes = [];
+let adminNotificationsEnabled = true;
 
 // Initialize default data in MongoDB
 async function initializeDefaultData() {
@@ -257,6 +258,22 @@ async function initializeDefaultData() {
 
     // Migrate existing users to ensure they have teamSettings
     await migrateUserTeamSettings();
+
+    // Initialize admin settings
+    const adminSettings = await db.collection('adminSettings').findOne({ type: 'notifications' });
+    if (adminSettings) {
+      adminNotificationsEnabled = adminSettings.enabled;
+      console.log(`🔔 Admin notifications initialized from DB: ${adminNotificationsEnabled ? 'enabled' : 'disabled'}`);
+    } else {
+      // Set default value if no setting exists
+      await db.collection('adminSettings').insertOne({
+        type: 'notifications',
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      console.log('🔔 Admin notifications default setting created in DB');
+    }
 
   } catch (error) {
     console.error('❌ Error initializing default data:', error);
@@ -6940,6 +6957,46 @@ app.get('/api/admin/notifications/pending', authenticateToken, requireAdmin, asy
     res.json(pendingNotifications);
   } catch (error) {
     console.error('Error getting pending notifications:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get notification status
+app.get('/api/admin/notifications/status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    res.json({ enabled: adminNotificationsEnabled });
+  } catch (error) {
+    console.error('Error getting notification status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Toggle notifications on/off
+app.post('/api/admin/notifications/toggle', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    
+    if (enabled === undefined) {
+      return res.status(400).json({ error: 'Enabled status is required' });
+    }
+    
+    // Save to database if connected
+    if (mongoConnected && db) {
+      await db.collection('adminSettings').updateOne(
+        { type: 'notifications' },
+        { $set: { enabled, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    
+    // Update local variable
+    adminNotificationsEnabled = enabled;
+    
+    console.log(`🔔 Admin notifications ${enabled ? 'enabled' : 'disabled'} by ${req.user.teamName}`);
+    
+    res.json({ success: true, enabled });
+  } catch (error) {
+    console.error('Error toggling notifications:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
