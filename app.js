@@ -257,6 +257,9 @@ async function initializeDefaultData() {
 
     // Migrate existing users to ensure they have teamSettings
     await migrateUserTeamSettings();
+    
+    // Migrate existing notifications to ensure they have enabled field
+    await migrateNotificationEnabledField();
 
   } catch (error) {
     console.error('❌ Error initializing default data:', error);
@@ -3301,7 +3304,16 @@ app.post('/api/spin', authenticateToken, async (req, res) => {
 app.get('/api/admin/notifications', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const notifications = await getAllNotifications();
-    res.json(notifications);
+    
+    // Ensure all notifications have the enabled field
+    const notificationsWithDefaults = notifications.map(notification => ({
+      ...notification,
+      enabled: notification.enabled !== undefined ? notification.enabled : true
+    }));
+    
+    console.log(`🔔 Admin requested notifications, returning ${notificationsWithDefaults.length} with enabled field`);
+    
+    res.json(notificationsWithDefaults);
   } catch (error) {
     console.error('Get notifications error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -4711,6 +4723,25 @@ async function migrateUserTeamSettings() {
     }
   } catch (error) {
     console.error('❌ Error migrating user team settings:', error);
+  }
+}
+
+// Migrate existing notifications to ensure they have enabled field
+async function migrateNotificationEnabledField() {
+  if (!mongoConnected || !db) return;
+
+  try {
+    // Update notifications that don't have enabled field
+    const result = await db.collection('notifications').updateMany(
+      { enabled: { $exists: false } },
+      { $set: { enabled: true } }
+    );
+    
+    if (result.modifiedCount > 0) {
+      console.log(`✅ Migrated ${result.modifiedCount} notifications to include enabled field`);
+    }
+  } catch (error) {
+    console.error('❌ Error migrating notification enabled field:', error);
   }
 }
 
@@ -6945,19 +6976,37 @@ app.put('/api/admin/notifications/:id/toggle', authenticateToken, requireAdmin, 
     }
     
     console.log(`🔔 Admin toggling notification ${id} to ${enabled ? 'enabled' : 'disabled'}`);
+    console.log(`🔔 Request body:`, req.body);
+    console.log(`🔔 Notification ID:`, id);
     
     // Update notification in database
     if (mongoConnected && db) {
-      await db.collection('notifications').updateOne(
-        { id },
+      // Try to find notification first to see its structure
+      const existingNotification = await db.collection('notifications').findOne({ id: id });
+      console.log(`🔔 Existing notification:`, existingNotification);
+      
+      if (!existingNotification) {
+        console.log(`🔔 No notification found with ID: ${id}`);
+        return res.status(404).json({ error: 'Notification not found' });
+      }
+      
+      const result = await db.collection('notifications').updateOne(
+        { id: id },
         { $set: { enabled: enabled, updatedAt: new Date() } }
       );
+      console.log(`🔔 MongoDB update result:`, result);
     } else {
       // Fallback to in-memory storage
       const notificationIndex = notifications.findIndex(n => n.id === id);
+      console.log(`🔔 In-memory notification index:`, notificationIndex);
+      
       if (notificationIndex !== -1) {
         notifications[notificationIndex].enabled = enabled;
         notifications[notificationIndex].updatedAt = new Date();
+        console.log(`🔔 Updated in-memory notification:`, notifications[notificationIndex]);
+      } else {
+        console.log(`🔔 No in-memory notification found with ID: ${id}`);
+        return res.status(404).json({ error: 'Notification not found' });
       }
     }
     
@@ -6971,7 +7020,7 @@ app.put('/api/admin/notifications/:id/toggle', authenticateToken, requireAdmin, 
     });
   } catch (error) {
     console.error('Error toggling notification:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
@@ -6983,6 +7032,38 @@ app.get('/api/admin/notifications/pending', authenticateToken, requireAdmin, asy
   } catch (error) {
     console.error('Error getting pending notifications:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Debug - Get notification by ID
+app.get('/api/admin/notifications/debug/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`🔍 Debug: Looking for notification with ID: ${id}`);
+    
+    let notification = null;
+    if (mongoConnected && db) {
+      notification = await db.collection('notifications').findOne({ id: id });
+      console.log(`🔍 Debug: MongoDB result:`, notification);
+    } else {
+      notification = notifications.find(n => n.id === id);
+      console.log(`🔍 Debug: In-memory result:`, notification);
+    }
+    
+    if (!notification) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+    
+    res.json({
+      success: true,
+      notification: notification,
+      id: notification.id,
+      type: typeof notification.id,
+      hasEnabled: 'enabled' in notification
+    });
+  } catch (error) {
+    console.error('Error debugging notification:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
