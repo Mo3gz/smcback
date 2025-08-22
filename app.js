@@ -4353,7 +4353,7 @@ app.post('/api/debug/create-test-notifications', authenticateToken, async (req, 
         id: (Date.now() + 4).toString(),
         userId: userId,
         type: 'global',
-        message: 'Welcome to the Saint Paula Sports Team! Good luck!',
+        message: 'Welcome to the Saint Paul Sports Team! Good luck!',
         timestamp: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
         read: true,
         recipientType: 'global'
